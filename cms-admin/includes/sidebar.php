@@ -39,7 +39,10 @@ $currentNav = $currentNav ?? '';
 <aside class="admin-sidebar" id="admin-sidebar" aria-label="Primary">
     <div class="admin-sidebar__brand">
         <a class="admin-sidebar__logo" href="<?= cms_esc(cms_dashboard_href()) ?>">
-            <span class="admin-sidebar__logo-badge" aria-hidden="true"><?= cms_esc(CMS_ADMIN_NAME) ?></span>
+            <img class="admin-sidebar__logo-badge admin-sidebar__logo-badge--black"
+                 src="<?= cms_esc(cms_asset_url('img/logo.png')) ?>" alt="<?= cms_esc(CMS_ADMIN_NAME) ?> logo">
+            <img class="admin-sidebar__logo-badge admin-sidebar__logo-badge--white"
+                 src="<?= cms_esc(cms_asset_url('img/logo-white.png')) ?>" alt="<?= cms_esc(CMS_ADMIN_NAME) ?> logo">
             <span class="admin-sidebar__titles">
                 <span class="admin-sidebar__name"><?= cms_esc(CMS_ADMIN_NAME) ?></span>
                 <span class="admin-sidebar__tag"><?= cms_esc(CMS_ADMIN_TAGLINE) ?></span>

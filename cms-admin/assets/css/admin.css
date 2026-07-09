@@ -492,33 +492,28 @@ body.admin-body {
   min-width: 0;
 }
 
-.admin-sidebar__logo img {
-  border-radius: 12px;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-xs);
+/* WPM logo mark — transparent PNG, auto-swaps colour per theme so it stays
+   legible on both light and dark/purple backgrounds. */
+.admin-sidebar__logo-badge {
+  width: 56px;
+  height: 56px;
   flex-shrink: 0;
-  object-fit: cover;
+  object-fit: contain;
+  user-select: none;
 }
 
-/* WPM text-based logo badge (replaces raster logo image) */
-.admin-sidebar__logo-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-  box-shadow: var(--shadow-xs);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.03em;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  user-select: none;
+.admin-sidebar__logo-badge--white {
+  display: none;
+}
+
+[data-theme="dark-modern"] .admin-sidebar__logo-badge--black,
+[data-theme="deep-purple"] .admin-sidebar__logo-badge--black {
+  display: none;
+}
+
+[data-theme="dark-modern"] .admin-sidebar__logo-badge--white,
+[data-theme="deep-purple"] .admin-sidebar__logo-badge--white {
+  display: block;
 }
 
 .admin-sidebar__titles {

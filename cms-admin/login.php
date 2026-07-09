@@ -226,8 +226,8 @@ $fav     = cms_esc(cms_favicon_url());
     .lp-brand__logo-wrap {
         position: relative;
         margin-bottom: 20px;
-        width: 108px;
-        height: 108px;
+        width: 136px;
+        height: 136px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -248,8 +248,8 @@ $fav     = cms_esc(cms_favicon_url());
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 108px;
-        height: 108px;
+        width: 136px;
+        height: 136px;
         border-radius: var(--lp-r-logo);
         border: 1px solid rgba(168, 85, 247, 0.38);
         box-shadow:
@@ -258,13 +258,13 @@ $fav     = cms_esc(cms_favicon_url());
         position: relative;
         z-index: 1;
         background: linear-gradient(135deg, #7c3aed 0%, #a855f7 55%, #c084fc 100%);
-        font-family: var(--lp-font);
-        font-weight: 700;
-        font-size: 2.15rem;
-        letter-spacing: 0.03em;
-        color: #fff;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
         user-select: none;
+    }
+
+    .lp-brand__logo img {
+        width: 82%;
+        height: 82%;
+        object-fit: contain;
     }
 
     .lp-brand__name {
@@ -458,8 +458,8 @@ $fav     = cms_esc(cms_favicon_url());
             border-radius: 18px;
         }
         .lp-brand__name { font-size: 1.55rem; }
-        .lp-brand__logo-wrap { width: 84px; height: 84px; }
-        .lp-brand__logo { width: 84px; height: 84px; font-size: 1.6rem; }
+        .lp-brand__logo-wrap { width: 100px; height: 100px; }
+        .lp-brand__logo { width: 100px; height: 100px; }
     }
 
     /* ── Reduced motion ───────────────────────────────────────── */
@@ -491,7 +491,9 @@ $fav     = cms_esc(cms_favicon_url());
         <!-- ── Brand ── -->
         <div class="lp-brand">
             <div class="lp-brand__logo-wrap">
-                <div class="lp-brand__logo" role="img" aria-label="<?= cms_esc(CMS_ADMIN_NAME) ?> logo"><?= cms_esc(CMS_ADMIN_NAME) ?></div>
+                <div class="lp-brand__logo">
+                    <img src="<?= cms_esc(cms_asset_url('img/logo-white.png')) ?>" alt="<?= cms_esc(CMS_ADMIN_NAME) ?> logo">
+                </div>
             </div>
             <h1 class="lp-brand__name" id="lp-heading"><?= cms_esc(CMS_ADMIN_NAME) ?></h1>
             <p class="lp-brand__tagline"><?= cms_esc(CMS_ADMIN_TAGLINE) ?></p>

@@ -158,6 +158,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                     <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                     <button type="submit" class="admin-btn admin-btn--sm admin-btn--danger">Archive</button>
                                 </form>
+                                <form class="inline-form" method="post" action="prompt-control-delete.php"
+                                      onsubmit="return confirm('Delete this draft permanently? This cannot be undone.');">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--danger">Delete</button>
+                                </form>
                             <?php elseif ($row['status'] === 'active'): ?>
                                 <a href="prompt-control-edit.php?id=<?= (int) $row['id'] ?>"
                                    class="admin-btn admin-btn--sm admin-btn--secondary">New Version</a>
@@ -165,6 +171,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <?php else: ?>
                                 <a href="prompt-control-edit.php?id=<?= (int) $row['id'] ?>"
                                    class="admin-btn admin-btn--sm admin-btn--secondary">Clone</a>
+                                <form class="inline-form" method="post" action="prompt-control-delete.php"
+                                      onsubmit="return confirm('Delete this archived prompt permanently? This cannot be undone.');">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--danger">Delete</button>
+                                </form>
                             <?php endif; ?>
                         </td>
                     </tr>
