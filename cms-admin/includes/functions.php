@@ -92,6 +92,17 @@ function cms_nav_href(string $pageFilename): string
     return cms_is_pages_subdirectory() ? $pageFilename : 'pages/' . $pageFilename;
 }
 
+/**
+ * Prefix needed to reach cms-admin/pages/*.php from the current script.
+ * Used client-side (global search) to turn a bare filename returned by
+ * actions/search.php into a link that resolves correctly no matter which
+ * admin page the search was triggered from.
+ */
+function cms_pages_prefix(): string
+{
+    return cms_is_pages_subdirectory() ? '' : 'pages/';
+}
+
 function cms_dashboard_href(): string
 {
     return cms_is_pages_subdirectory() ? '../dashboard.php' : 'dashboard.php';
@@ -147,16 +158,37 @@ function cms_asset_url(string $relativePath): string
     return $prefix . $relativePath;
 }
 
+/**
+ * Prefix that reaches the public front-end (project root) from wherever the
+ * current admin script lives.
+ *
+ * - Local dev (cms-admin/ nested under the project root, same host): a plain
+ *   relative "../" (or "../../" from pages/) is enough.
+ * - Production (wpm.sagacrypto.com's document root pointed straight at
+ *   cms-admin/, so the public site is a *different* host entirely — a
+ *   relative path can never reach it): build an absolute URL by stripping
+ *   the "wpm." prefix off the current host, e.g.
+ *   wpm.sagacrypto.com -> sagacrypto.com.
+ */
+function cms_public_base_prefix(): string
+{
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if (str_starts_with($host, 'wpm.')) {
+        $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            ? 'https' : 'http';
+        return $scheme . '://' . substr($host, 4) . '/';
+    }
+    return cms_is_pages_subdirectory() ? '../../' : '../';
+}
+
 function cms_public_site_url(): string
 {
-    return '../index.php';
+    return cms_public_base_prefix() . 'index.php';
 }
 
 function cms_favicon_url(): string
 {
-    return cms_is_pages_subdirectory()
-        ? '../../uploads/site/favicon/favicon.png'
-        : '../uploads/site/favicon/favicon.png';
+    return cms_public_base_prefix() . 'uploads/site/favicon/favicon.png';
 }
 
 function cms_esc(?string $value): string

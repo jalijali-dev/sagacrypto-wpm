@@ -12,9 +12,15 @@ $pageTitle = $pageTitle ?? 'Dashboard';
             <h1 class="admin-navbar__title"><?= cms_esc($pageTitle) ?></h1>
         </div>
         <div class="admin-navbar__center">
-            <label class="admin-search">
+            <label class="admin-search" data-pages-prefix="<?= cms_esc(cms_pages_prefix()) ?>">
                 <span class="visually-hidden">Search</span>
-                <input type="search" class="admin-search__input" placeholder="Search content, orders, customers…" autocomplete="off" disabled>
+                <input type="search"
+                       id="admin-search-input"
+                       class="admin-search__input"
+                       placeholder="Search products, pages, gallery, testimonials, messages…"
+                       autocomplete="off"
+                       data-search-action="<?= cms_esc(cms_action_href('search.php')) ?>">
+                <div class="admin-search__results" id="admin-search-results" hidden></div>
             </label>
         </div>
         <div class="admin-navbar__right">

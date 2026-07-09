@@ -134,3 +134,113 @@
     initSelect();
   }
 }());
+
+/* ============================================================
+   Global search (navbar)
+   Debounced AJAX call to actions/search.php, renders a grouped
+   dropdown of results (Products, Pages & Articles, Gallery,
+   Testimonials, Contact Messages) under the search box.
+   ============================================================ */
+(function () {
+  var input = document.getElementById("admin-search-input");
+  var resultsBox = document.getElementById("admin-search-results");
+  if (!input || !resultsBox) { return; }
+
+  var wrapper = input.closest(".admin-search");
+  var pagesPrefix = (wrapper && wrapper.dataset.pagesPrefix) || "";
+  var searchAction = input.dataset.searchAction;
+  var debounceTimer = null;
+  var activeController = null;
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function hideResults() {
+    resultsBox.setAttribute("hidden", "hidden");
+    resultsBox.innerHTML = "";
+  }
+
+  function renderResults(items, query) {
+    if (!items.length) {
+      resultsBox.innerHTML =
+        '<div class="admin-search__empty">No results for “' + escapeHtml(query) + '”.</div>';
+      resultsBox.removeAttribute("hidden");
+      return;
+    }
+
+    var groups = {};
+    var order = [];
+    items.forEach(function (item) {
+      if (!groups[item.type]) {
+        groups[item.type] = [];
+        order.push(item.type);
+      }
+      groups[item.type].push(item);
+    });
+
+    var html = "";
+    order.forEach(function (type) {
+      html += '<div class="admin-search__group-label">' + escapeHtml(type) + "</div>";
+      groups[type].forEach(function (item) {
+        var href = pagesPrefix + item.url;
+        html +=
+          '<a class="admin-search__item" href="' + escapeHtml(href) + '">' +
+          '<span class="admin-search__item-title">' + escapeHtml(item.title || "(untitled)") + "</span>" +
+          '<span class="admin-search__item-subtitle">' + escapeHtml(item.subtitle || "") + "</span>" +
+          "</a>";
+      });
+    });
+
+    resultsBox.innerHTML = html;
+    resultsBox.removeAttribute("hidden");
+  }
+
+  function runSearch(query) {
+    if (!searchAction) { return; }
+    if (activeController) { activeController.abort(); }
+    activeController = new AbortController();
+
+    fetch(searchAction + "?q=" + encodeURIComponent(query), {
+      credentials: "same-origin",
+      signal: activeController.signal
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) { return; }
+        renderResults(data.results || [], query);
+      })
+      .catch(function () { /* aborted or network hiccup: ignore */ });
+  }
+
+  input.addEventListener("input", function () {
+    var query = input.value.trim();
+    window.clearTimeout(debounceTimer);
+    if (query.length < 2) {
+      hideResults();
+      return;
+    }
+    debounceTimer = window.setTimeout(function () { runSearch(query); }, 250);
+  });
+
+  input.addEventListener("focus", function () {
+    if (input.value.trim().length >= 2 && resultsBox.innerHTML) {
+      resultsBox.removeAttribute("hidden");
+    }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!wrapper.contains(e.target)) {
+      hideResults();
+    }
+  });
+
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      hideResults();
+      input.blur();
+    }
+  });
+}());
