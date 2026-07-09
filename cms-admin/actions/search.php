@@ -45,8 +45,8 @@ $runSearch = static function (PDO $pdo, string $sql, array $params, callable $ma
 // ── Products ────────────────────────────────────────────────────────────
 $runSearch(
     $pdo,
-    'SELECT id, name, slug FROM products WHERE name LIKE :q OR slug LIKE :q ORDER BY name LIMIT 5',
-    ['q' => $like],
+    'SELECT id, name, slug FROM products WHERE name LIKE :q1 OR slug LIKE :q2 ORDER BY name LIMIT 5',
+    ['q1' => $like, 'q2' => $like],
     static fn (array $row): array => [
         'type'     => 'Products',
         'title'    => (string) $row['name'],
@@ -58,8 +58,8 @@ $runSearch(
 // ── Pages & Articles ────────────────────────────────────────────────────
 $runSearch(
     $pdo,
-    'SELECT page_id, title, slug FROM pages WHERE title LIKE :q OR slug LIKE :q ORDER BY title LIMIT 5',
-    ['q' => $like],
+    'SELECT page_id, title, slug FROM pages WHERE title LIKE :q1 OR slug LIKE :q2 ORDER BY title LIMIT 5',
+    ['q1' => $like, 'q2' => $like],
     static fn (array $row): array => [
         'type'     => 'Pages & Articles',
         'title'    => (string) $row['title'],
@@ -71,8 +71,8 @@ $runSearch(
 // ── Gallery ──────────────────────────────────────────────────────────────
 $runSearch(
     $pdo,
-    'SELECT id, title FROM gallery WHERE title LIKE :q ORDER BY title LIMIT 5',
-    ['q' => $like],
+    'SELECT id, title FROM gallery WHERE title LIKE :q1 ORDER BY title LIMIT 5',
+    ['q1' => $like],
     static fn (array $row): array => [
         'type'     => 'Gallery',
         'title'    => (string) $row['title'],
@@ -84,8 +84,8 @@ $runSearch(
 // ── Testimonials ─────────────────────────────────────────────────────────
 $runSearch(
     $pdo,
-    'SELECT id, client_name, content FROM testimonials WHERE client_name LIKE :q OR content LIKE :q ORDER BY client_name LIMIT 5',
-    ['q' => $like],
+    'SELECT id, client_name, content FROM testimonials WHERE client_name LIKE :q1 OR content LIKE :q2 ORDER BY client_name LIMIT 5',
+    ['q1' => $like, 'q2' => $like],
     static fn (array $row): array => [
         'type'     => 'Testimonials',
         'title'    => (string) $row['client_name'],
@@ -98,9 +98,9 @@ $runSearch(
 $runSearch(
     $pdo,
     'SELECT id, full_name, email, message FROM contact_messages
-     WHERE full_name LIKE :q OR email LIKE :q OR message LIKE :q
+     WHERE full_name LIKE :q1 OR email LIKE :q2 OR message LIKE :q3
      ORDER BY created_at DESC LIMIT 5',
-    ['q' => $like],
+    ['q1' => $like, 'q2' => $like, 'q3' => $like],
     static fn (array $row): array => [
         'type'     => 'Contact Messages',
         'title'    => (string) $row['full_name'],
