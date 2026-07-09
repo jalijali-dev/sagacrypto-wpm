@@ -1,0 +1,19 @@
+# Sensitive config (contains real DB credentials)
+cms-admin/config/database.php
+
+# User-uploaded content (not source code, can get large)
+uploads/
+
+# Build/deploy artifacts
+*.zip
+*.bak
+sagacrypto-*.zip
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log

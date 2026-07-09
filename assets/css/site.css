@@ -1,0 +1,925 @@
+/* ============================================================
+   WPM — Crypto Portal front-end theme
+   Dark / premium / glassmorphism. Self-contained (no dependency
+   on cms-admin/assets/css/admin.css).
+   ============================================================ */
+
+:root {
+  --bg-void: #050310;
+  --bg-deep: #0a0618;
+  --bg-deep-2: #0d0a1f;
+  --surface-glass: rgba(255, 255, 255, 0.045);
+  --surface-glass-strong: rgba(255, 255, 255, 0.07);
+  --border-glass: rgba(255, 255, 255, 0.09);
+  --border-glow: rgba(139, 92, 246, 0.35);
+
+  --purple: #8b5cf6;
+  --purple-2: #a855f7;
+  --cyan: #22d3ee;
+  --gold: #fbbf24;
+  --green: #10b981;
+  --red: #f43f5e;
+
+  --text: #f5f3ff;
+  --text-muted: rgba(245, 243, 255, 0.64);
+  --text-faint: rgba(245, 243, 255, 0.42);
+
+  --grad-brand: linear-gradient(135deg, var(--purple) 0%, var(--cyan) 100%);
+  --grad-gold: linear-gradient(135deg, var(--gold) 0%, #f59e0b 100%);
+
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 10px;
+
+  --shadow-glow-purple: 0 8px 40px rgba(139, 92, 246, 0.25);
+  --shadow-glow-cyan: 0 8px 40px rgba(34, 211, 238, 0.18);
+
+  --font-display: 'Space Grotesk', 'Poppins', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* , *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body.crypto-theme {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg-void);
+  color: var(--text);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.crypto-theme img { max-width: 100%; display: block; }
+
+.crypto-theme a { color: inherit; text-decoration: none; }
+
+.crypto-theme ::selection { background: rgba(139, 92, 246, 0.35); color: #fff; }
+
+/* Background ambient glow layer, fixed behind everything */
+.crypto-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 15% 0%, rgba(139, 92, 246, 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 45% at 90% 15%, rgba(34, 211, 238, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(168, 85, 247, 0.12) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-void) 0%, var(--bg-deep) 40%, var(--bg-deep-2) 100%);
+}
+
+.crypto-container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+.crypto-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(6, 4, 16, 0.55);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.crypto-nav__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.crypto-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+}
+
+.crypto-logo__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--grad-brand);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: #fff;
+  box-shadow: var(--shadow-glow-purple);
+  flex-shrink: 0;
+}
+
+.crypto-logo__text {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, #ffffff 20%, #c4b5fd 60%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.crypto-logo__tag {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: -2px;
+}
+
+.crypto-nav__menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.crypto-nav__menu a {
+  display: inline-block;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+}
+
+.crypto-nav__menu a:hover,
+.crypto-nav__menu a.is-active {
+  color: #fff;
+  background: rgba(139, 92, 246, 0.14);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.30), 0 0 18px rgba(139, 92, 246, 0.25);
+}
+
+.crypto-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crypto-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  white-space: nowrap;
+}
+
+.crypto-btn--primary {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--shadow-glow-purple);
+}
+
+.crypto-btn--primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4); }
+
+.crypto-btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-glass);
+  color: var(--text);
+}
+
+.crypto-btn--ghost:hover { border-color: var(--border-glow); background: rgba(139, 92, 246, 0.10); }
+
+.crypto-nav__toggle {
+  display: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.crypto-nav__toggle span,
+.crypto-nav__toggle span::before,
+.crypto-nav__toggle span::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  position: relative;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.crypto-nav__toggle span::before { position: absolute; top: -6px; }
+.crypto-nav__toggle span::after { position: absolute; top: 6px; }
+
+/* ============================================================
+   GLASS / CARD PRIMITIVES
+   ============================================================ */
+.glass-card {
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-glow);
+  background: var(--surface-glass-strong);
+  box-shadow: var(--shadow-glow-purple);
+}
+
+.crypto-card {
+  padding: 28px;
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.crypto-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.5), rgba(34, 211, 238, 0.15), transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.crypto-card__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.22), rgba(34, 211, 238, 0.14));
+  border: 1px solid var(--border-glow);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  color: var(--cyan);
+}
+
+.crypto-card__icon svg { width: 22px; height: 22px; }
+
+.crypto-card__icon--img {
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-glass-strong);
+}
+
+.crypto-card__icon--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.crypto-card h3 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.crypto-card p {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.market-card {
+  padding: 22px 20px;
+  border-radius: var(--radius-md);
+}
+
+.market-card__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.market-card__value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 10px;
+  color: var(--text);
+}
+
+.market-card__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.market-card__delta--up { color: var(--green); }
+.market-card__delta--down { color: var(--red); }
+
+/* ============================================================
+   SECTION LAYOUT HELPERS
+   ============================================================ */
+.crypto-section {
+  padding: 96px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.crypto-section--tight { padding: 72px 0; }
+
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.30);
+  color: var(--cyan);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+
+.section-title span {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.section-subtitle {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-width: 640px;
+  margin: 0 0 40px;
+}
+
+.section-header--center {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.section-header--center .section-subtitle { margin-left: auto; margin-right: auto; }
+
+.crypto-grid {
+  display: grid;
+  gap: 22px;
+}
+
+.crypto-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.crypto-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.crypto-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.crypto-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.crypto-hero {
+  position: relative;
+  padding: 90px 0 40px;
+  overflow: hidden;
+}
+
+.crypto-hero__inner {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.crypto-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.10);
+  border: 1px solid rgba(251, 191, 36, 0.30);
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 22px;
+}
+
+.crypto-hero__eyebrow .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+}
+
+.crypto-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5.2vw, 58px);
+  line-height: 1.08;
+  font-weight: 700;
+  margin: 0 0 20px;
+  letter-spacing: -0.01em;
+}
+
+.crypto-hero h1 span {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.crypto-hero p.lead {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--text-muted);
+  max-width: 520px;
+  margin: 0 0 32px;
+}
+
+.crypto-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 44px;
+}
+
+.crypto-hero__ticker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ticker-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  font-size: 13px;
+}
+
+.ticker-chip strong { font-family: var(--font-display); font-weight: 700; }
+.ticker-chip .up { color: var(--green); }
+.ticker-chip .down { color: var(--red); }
+
+/* Hero visual: floating coin / glow stage */
+.crypto-hero__visual {
+  position: relative;
+  height: 420px;
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(70px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.hero-glow--a { width: 300px; height: 300px; background: var(--purple); top: 10%; left: 10%; }
+.hero-glow--b { width: 260px; height: 260px; background: var(--cyan); bottom: 5%; right: 5%; opacity: 0.4; }
+
+.coin {
+  position: absolute;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #fff;
+  animation: coinFloat 6s ease-in-out infinite;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.coin--btc {
+  width: 128px; height: 128px;
+  font-size: 46px;
+  top: 6%; left: 22%;
+  background: linear-gradient(135deg, var(--gold) 0%, #b45309 100%);
+  animation-delay: 0s;
+}
+
+.coin--eth {
+  width: 92px; height: 92px;
+  font-size: 32px;
+  top: 42%; left: 54%;
+  background: linear-gradient(135deg, #a78bfa 0%, #6d28d9 100%);
+  animation-delay: -2s;
+}
+
+.coin--sol {
+  width: 70px; height: 70px;
+  font-size: 24px;
+  top: 60%; left: 8%;
+  background: linear-gradient(135deg, var(--cyan) 0%, #0e7490 100%);
+  animation-delay: -4s;
+}
+
+.hero-chart-card {
+  position: absolute;
+  right: 4%;
+  bottom: 8%;
+  width: 220px;
+  padding: 16px 18px;
+}
+
+.hero-chart-card__label { font-size: 11.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.hero-chart-card__value { font-family: var(--font-display); font-size: 20px; font-weight: 700; margin: 4px 0 10px; }
+
+@keyframes coinFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(6deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coin { animation: none; }
+}
+
+/* ============================================================
+   GALLERY (placeholder gradient tiles)
+   ============================================================ */
+.gallery-tile {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 18px;
+}
+
+.gallery-tile__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.gallery-tile__label {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.gallery-tile--1 .gallery-tile__bg { background: linear-gradient(135deg, #4c1d95 0%, #1e1b4b 100%); }
+.gallery-tile--2 .gallery-tile__bg { background: linear-gradient(135deg, #0e7490 0%, #0c4a6e 100%); }
+.gallery-tile--3 .gallery-tile__bg { background: linear-gradient(135deg, #92400e 0%, #451a03 100%); }
+.gallery-tile--4 .gallery-tile__bg { background: linear-gradient(135deg, #7e22ce 0%, #0f172a 100%); }
+.gallery-tile--5 .gallery-tile__bg { background: linear-gradient(135deg, #0f766e 0%, #082f49 100%); }
+.gallery-tile--6 .gallery-tile__bg { background: linear-gradient(135deg, #be185d 0%, #1e1b4b 100%); }
+
+/* ============================================================
+   TESTIMONIALS
+   ============================================================ */
+.testi-card {
+  padding: 26px;
+  border-radius: var(--radius-md);
+}
+
+.testi-card__quote {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin: 0 0 20px;
+}
+
+.testi-card__person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.testi-card__avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  background: var(--grad-brand);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.testi-card__name { font-weight: 600; font-size: 14px; }
+.testi-card__role { font-size: 12.5px; color: var(--text-faint); }
+
+/* ============================================================
+   ARTICLES
+   ============================================================ */
+.article-card {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.article-card__media {
+  height: 130px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(34, 211, 238, 0.20));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.article-card__media svg { width: 34px; height: 34px; }
+
+.article-card__body { padding: 22px; flex: 1; display: flex; flex-direction: column; }
+
+.article-card__tag {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(34, 211, 238, 0.10);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.article-card h3 { font-family: var(--font-display); font-size: 16.5px; margin: 0 0 8px; }
+.article-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 16px; flex: 1; }
+
+.article-card__cta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--purple-2);
+  margin-top: auto;
+}
+
+/* ============================================================
+   CONTACT
+   ============================================================ */
+.contact-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.contact-info-card {
+  padding: 30px;
+  border-radius: var(--radius-lg);
+}
+
+.contact-info-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.contact-info-row:last-child { border-bottom: none; }
+
+.contact-info-row__icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid var(--border-glow);
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  flex-shrink: 0;
+}
+
+.contact-info-row__icon svg { width: 17px; height: 17px; }
+
+.contact-info-row__label { font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.contact-info-row__value { font-size: 14.5px; color: var(--text); font-weight: 500; margin-top: 2px; }
+
+.contact-form-card { padding: 32px; border-radius: var(--radius-lg); }
+
+.form-row { display: grid; gap: 8px; margin-bottom: 18px; }
+.form-row--2col { grid-template-columns: 1fr 1fr; gap: 18px; display: grid; margin-bottom: 0; }
+
+.form-label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.20);
+}
+
+.form-textarea { resize: vertical; min-height: 120px; }
+
+.form-alert {
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  margin-bottom: 22px;
+}
+
+.form-alert--success { background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.30); color: #6ee7b7; }
+.form-alert--error { background: rgba(244, 63, 94, 0.10); border: 1px solid rgba(244, 63, 94, 0.30); color: #fda4af; }
+
+.hp-field { position: absolute; left: -9999px; top: -9999px; }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.crypto-footer {
+  border-top: 1px solid var(--border-glass);
+  padding: 56px 0 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 40px;
+  margin-bottom: 40px;
+}
+
+.footer-brand p {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin: 14px 0 0;
+  max-width: 320px;
+}
+
+.footer-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin: 0 0 16px;
+}
+
+.footer-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.footer-links a { font-size: 14px; color: var(--text-muted); transition: color 0.16s ease; }
+.footer-links a:hover { color: var(--cyan); }
+
+.footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-glass);
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.footer-disclaimer {
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 720px;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 980px) {
+  .crypto-nav__menu { display: none; }
+  .crypto-nav__toggle { display: inline-flex; }
+  .crypto-hero__inner { grid-template-columns: 1fr; }
+  .crypto-hero__visual { height: 300px; margin-top: 20px; }
+  .crypto-grid--3, .crypto-grid--4, .crypto-grid--5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .contact-grid { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .crypto-hero { padding: 60px 0 24px; }
+  .crypto-grid--3, .crypto-grid--4, .crypto-grid--5, .crypto-grid--2 { grid-template-columns: 1fr; }
+  .form-row--2col { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr; gap: 28px; }
+  .crypto-section { padding: 64px 0; }
+  .crypto-hero__visual { display: none; }
+  .footer-bottom { flex-direction: column; align-items: flex-start; }
+}
+
+/* Mobile nav drawer */
+.crypto-nav__mobile {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(5, 3, 16, 0.75);
+  backdrop-filter: blur(10px);
+}
+
+.crypto-nav__mobile.is-open { display: block; }
+
+.crypto-nav__mobile-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(320px, 84vw);
+  height: 100%;
+  background: var(--bg-deep);
+  border-left: 1px solid var(--border-glass);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crypto-nav__mobile-close {
+  align-self: flex-end;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.crypto-nav__mobile-panel a {
+  padding: 14px 12px;
+  border-radius: 12px;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.crypto-nav__mobile-panel a:hover,
+.crypto-nav__mobile-panel a.is-active {
+  background: rgba(139, 92, 246, 0.14);
+  color: #fff;
+}
