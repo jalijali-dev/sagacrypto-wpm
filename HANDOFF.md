@@ -5,7 +5,7 @@
 > sumber kebenaran paling lengkap & detail), tapi versi cepat buat langsung
 > ngerti konteks tanpa harus baca ulang seluruh riwayat chat lama.
 
-Terakhir di-update: **17 Juli 2026**
+Terakhir di-update: **18 Juli 2026**
 
 > Dokumen pendukung lain ada di `docs/`: `ROADMAP.md`, `DECISIONS.md`, `DEV_GUIDE.md`.
 
@@ -38,10 +38,19 @@ user ulang.
 - **`declare(strict_types=1);` harus jadi statement PERTAMA** di setiap
   file PHP, persis setelah `<?php`. Tidak ada pengecualian.
 - **PDO** selalu dibuat dengan `PDO::ATTR_EMULATE_PREPARES => false`.
-- **Topologi deploy split-subdomain**: `sagacrypto.com` (frontend,
-  `public_html/`) dan `wpm.sagacrypto.com` (admin — isi folder `cms-admin/`
-  di-flatten langsung ke document root, TANPA prefix `cms-admin/`). Satu
-  hosting/cPanel, satu MySQL server, tapi dua host yang beda secara HTTP.
+- **Topologi deploy split-subdomain**: `sagacrypto.com` dan
+  `wpm.sagacrypto.com` satu hosting/cPanel & satu MySQL server, tapi dua
+  host berbeda secara HTTP. Struktur server sebenarnya (dikonfirmasi
+  langsung di server, 18 Jul 2026 — koreksi dari asumsi lama di bawah):
+  `public_html/` adalah document root `sagacrypto.com` (frontend), dan
+  `public_html/cms-admin/` adalah document root `wpm.sagacrypto.com`
+  (admin) — folder `cms-admin/` **tetap ada sebagai subfolder nyata di
+  dalam `public_html/`, prefix-nya TIDAK di-flatten/dihilangkan saat
+  deploy**. Yang membuatnya jadi domain terpisah adalah konfigurasi
+  Document Root subdomain di cPanel yang menunjuk ke `public_html/cms-admin/`,
+  bukan pemindahan/penghilangan folder secara fisik. (Working copy git
+  ada terpisah di `~/repositories/sagacrypto-wpm/`, di luar `public_html/`
+  — lihat `docs/DEPLOY_WORKFLOW.md` untuk alur deploy lengkap.)
 - **`cms_public_base_prefix()`** (`cms-admin/includes/functions.php`) —
   satu-satunya cara yang benar buat bikin URL absolut dari admin balik ke
   frontend (misal buat preview gambar). JANGAN pakai `BASE_URL` mentah
@@ -82,10 +91,11 @@ user ulang.
   kalau perlu, atau langsung ke folder project (`wpm/`) yang MEMANG bisa
   di-overwrite/delete via bash.
 - **Delivery pattern yang konsisten dipakai sepanjang project**: kalau
-  selesai kerja, paket perubahan jadi `.zip` (struktur folder **flattened**
-  sesuai topologi production — tanpa prefix `cms-admin/` buat file admin),
-  sertakan `BACA-DULU.txt` (petunjuk upload + checklist verifikasi manual
-  dalam Bahasa Indonesia), lalu present ke user lewat
+  selesai kerja, paket perubahan jadi `.zip` (struktur folder **mengikuti
+  struktur repo apa adanya** — folder `cms-admin/` tetap dengan prefix-nya,
+  TIDAK di-flatten; lihat § 2 di atas & `docs/DEPLOY_WORKFLOW.md` untuk
+  kenapa), sertakan `BACA-DULU.txt` (petunjuk upload + checklist verifikasi
+  manual dalam Bahasa Indonesia), lalu present ke user lewat
   `mcp__cowork__present_files`.
 
 ---
@@ -107,10 +117,20 @@ Urut kira-kira kronologis, fase-fase besar:
 8. Site Settings, Banners, About Us — disambungkan penuh ke frontend
    (sebelumnya beberapa sempat orphan/tidak terpakai).
 9. AI content generation (Generate SEO/Article/FAQ) — endpoint `cms-admin/api/`.
-10. **Role-Based Access Control** (15 Jul 2026, kerjaan terakhir) — 3 tier
+10. **Role-Based Access Control** (15 Jul 2026) — 3 tier
     (Editor/Admin/Super Admin) sekarang benar-benar membatasi akses,
     plus bug lama dropdown role (value salah format) dibetulkan sekalian.
     Paket delivery: `sagacrypto-admin-role-access.zip` (34 file + BACA-DULU.txt).
+11. **Cleanup homepage** (18 Jul 2026) — section "Newsletter" (form
+    berlangganan email) dihapus dari `index.php`. Dicek: `contact-submit.php`
+    tidak punya logic yang membedakan subject Newsletter vs kontak biasa
+    (handler generik, insert ke `contact_messages`) — tidak ada dead code
+    yang tertinggal di backend.
+12. **`.gitignore` diperluas** (18 Jul 2026) — config sensitif
+    (`cms-admin/config/app.php`, file `.env*`), dokumen Growth Agent,
+    `cms-admin/uploads/`, `.claude/`, `logs/`, dan dependency folders
+    (`vendor/`, `node_modules/`) sekarang di-ignore. Konfigurasi repo,
+    bukan perubahan kode aplikasi.
 
 ---
 
@@ -124,8 +144,6 @@ Urut kira-kira kronologis, fase-fase besar:
 - **Fase 7: App Promotion module** — masih on hold (badge App
   Store/Google Play di homepage baru sebatas placeholder + logo, belum
   ada app beneran).
-- **Belum ada commit/push git** untuk seluruh perubahan dari awal project
-  — kalau user tanya soal versioning, ingatkan ini.
 
 ---
 

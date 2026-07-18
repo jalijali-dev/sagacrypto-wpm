@@ -153,9 +153,13 @@ Kalau kerjaan sudah selesai dan siap diserahkan ke user untuk diupload ke
 server (bukan lewat git push langsung — lihat `docs/ROADMAP.md`, belum ada
 commit git sama sekali di project ini sejauh ini):
 
-- Paket perubahan dibuat jadi `.zip`, struktur folder **flattened** sesuai
-  topologi production — tanpa prefix `cms-admin/` untuk file yang memang
-  masuk ke document root admin subdomain (`wpm.sagacrypto.com`).
+- Paket perubahan dibuat jadi `.zip`, struktur folder **mengikuti struktur
+  repo apa adanya** — folder `cms-admin/` **tetap dengan prefix-nya, TIDAK
+  di-flatten**. Di server, `cms-admin/` memang subfolder nyata di dalam
+  `public_html/` (`public_html/cms-admin/`) yang jadi document root
+  subdomain admin (`wpm.sagacrypto.com`) lewat konfigurasi Document Root
+  di cPanel — bukan hasil pemindahan/rename fisik saat deploy. Lihat
+  `docs/DEPLOY_WORKFLOW.md` untuk struktur server & alur deploy lengkap.
 - Sertakan `BACA-DULU.txt` di root zip: petunjuk upload + checklist
   verifikasi manual, dalam Bahasa Indonesia, ditulis untuk seseorang yang
   tidak melihat proses kerjanya langsung.
