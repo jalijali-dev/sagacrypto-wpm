@@ -1,9 +1,7 @@
 <?php
 declare(strict_types=1);
 
-$alerts = $alerts ?? [
-    ['type' => 'info', 'message' => CMS_DEMO_NOTICE],
-];
+$alerts = $alerts ?? [];
 ?>
 <div class="admin-alerts" role="region" aria-label="Notices">
     <?php foreach ($alerts as $alert) : ?>

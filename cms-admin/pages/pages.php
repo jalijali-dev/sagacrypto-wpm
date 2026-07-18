@@ -3,6 +3,68 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/schema-guard.php';
+require_once dirname(__DIR__) . '/includes/sitemap-service.php';
+
+cms_sitemap_ensure_schema($pdo);
+
+/**
+ * Auto-migration: article categories/tags support. Idempotent — checks
+ * INFORMATION_SCHEMA first, safe to run on every page load. Seeds the
+ * default category set on first creation only.
+ */
+$pg_schemaError = null;
+try {
+    $pg_categoriesCreated = cms_ensure_table(
+        $pdo,
+        'article_categories',
+        'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         name VARCHAR(100) NOT NULL,
+         slug VARCHAR(120) NOT NULL,
+         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+         UNIQUE KEY uniq_article_category_slug (slug)'
+    );
+    cms_ensure_table(
+        $pdo,
+        'article_tags',
+        'id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         name VARCHAR(100) NOT NULL,
+         slug VARCHAR(120) NOT NULL,
+         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+         UNIQUE KEY uniq_article_tag_slug (slug)'
+    );
+    cms_ensure_table(
+        $pdo,
+        'article_tag_map',
+        'page_id INT NOT NULL,
+         tag_id INT UNSIGNED NOT NULL,
+         PRIMARY KEY (page_id, tag_id),
+         KEY idx_article_tag_map_tag (tag_id)'
+    );
+
+    cms_ensure_column($pdo, 'pages', 'category_id', 'INT UNSIGNED DEFAULT NULL AFTER `slug`');
+    cms_ensure_column($pdo, 'pages', 'author_id', 'INT UNSIGNED DEFAULT NULL AFTER `category_id`');
+    cms_ensure_column($pdo, 'pages', 'meta_keywords', 'VARCHAR(255) DEFAULT NULL AFTER `meta_description`');
+    cms_ensure_column($pdo, 'pages', 'canonical_url', 'VARCHAR(255) DEFAULT NULL AFTER `meta_keywords`');
+    cms_ensure_column($pdo, 'pages', 'og_image', 'VARCHAR(255) DEFAULT NULL AFTER `canonical_url`');
+    cms_ensure_column($pdo, 'pages', 'is_featured', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `og_image`');
+    cms_ensure_column($pdo, 'pages', 'is_trending', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_featured`');
+    cms_ensure_column($pdo, 'pages', 'views', 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER `is_trending`');
+
+    if ($pg_categoriesCreated) {
+        $seedCats = [
+            'Crypto News', 'Market', 'Bitcoin', 'Altcoin', 'Blockchain', 'Technology',
+            'Business', 'Sports', 'Livescore', 'Apps', 'Guides', 'General News',
+        ];
+        $seedStmt = $pdo->prepare('INSERT IGNORE INTO article_categories (name, slug) VALUES (:name, :slug)');
+        foreach ($seedCats as $catName) {
+            $seedStmt->execute(['name' => $catName, 'slug' => cms_slugify($catName)]);
+        }
+    }
+} catch (Throwable $e) {
+    $pg_schemaError = $e->getMessage();
+}
 
 $pageTitle = 'Pages & Articles';
 $currentNav = 'pages';
@@ -72,6 +134,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($delete->rowCount() < 1) {
             $pg_redirect('Article not found or already deleted.', 'error');
         }
+        // Sitemaps module: hard deletes in this codebase have no
+        // trash/restore step, so the sitemap entry is simply flagged
+        // 'deleted' + excluded (never dropped outright, stays auditable).
+        cms_sitemap_on_article_delete($pdo, $deleteId);
         $pg_redirect('Article deleted successfully.');
     }
 
@@ -85,6 +151,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $faqJson = trim((string) ($_POST['faq_json'] ?? ''));
     $status = strtolower(trim((string) ($_POST['status'] ?? '')));
     $publishedAt = $pg_parse_published_at((string) ($_POST['published_at'] ?? ''));
+
+    // ── Phase 2 additions: category, author, tags, extra SEO, featured/trending ──
+    $categoryId   = (int) ($_POST['category_id'] ?? 0) ?: null;
+    $authorId     = (int) ($_POST['author_id'] ?? 0) ?: (int) ($_SESSION['cms_admin_id'] ?? 0) ?: null;
+    $metaKeywords = trim((string) ($_POST['meta_keywords'] ?? ''));
+    $canonicalUrl = trim((string) ($_POST['canonical_url'] ?? ''));
+    $ogImage      = trim((string) ($_POST['og_image'] ?? ''));
+    $isFeatured   = !empty($_POST['is_featured']) ? 1 : 0;
+    $isTrending   = !empty($_POST['is_trending']) ? 1 : 0;
+    $noindex      = !empty($_POST['noindex']) ? 1 : 0;
+    $tagsRaw      = trim((string) ($_POST['tags'] ?? ''));
 
     // Auto-fill published_at when publishing without a date — keeps draft saves clean
     if ($status === 'published' && $publishedAt === null) {
@@ -129,7 +206,46 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         'faq_json'         => $faqJson !== '' ? $faqJson : null,
         'status'           => $status,
         'published_at'     => $publishedAt,
+        'category_id'      => $categoryId,
+        'author_id'        => $authorId,
+        'meta_keywords'    => $metaKeywords !== '' ? $metaKeywords : null,
+        'canonical_url'    => $canonicalUrl !== '' ? $canonicalUrl : null,
+        'og_image'         => $ogImage !== '' ? $ogImage : null,
+        'is_featured'      => $isFeatured,
+        'is_trending'      => $isTrending,
+        'noindex'          => $noindex,
     ];
+
+    /**
+     * Resolve a comma-separated tag string into tag IDs, creating any tag
+     * that doesn't exist yet. Returns an array of int IDs (deduped).
+     */
+    $pg_syncTags = static function (PDO $pdo, int $pageId, string $tagsRaw): void {
+        $pdo->prepare('DELETE FROM article_tag_map WHERE page_id = :id')->execute(['id' => $pageId]);
+
+        $names = array_filter(array_map('trim', explode(',', $tagsRaw)));
+        if ($names === []) {
+            return;
+        }
+
+        $findStmt   = $pdo->prepare('SELECT id FROM article_tags WHERE slug = :slug LIMIT 1');
+        $insertStmt = $pdo->prepare('INSERT INTO article_tags (name, slug) VALUES (:name, :slug)');
+        $mapStmt    = $pdo->prepare('INSERT IGNORE INTO article_tag_map (page_id, tag_id) VALUES (:page_id, :tag_id)');
+
+        foreach ($names as $name) {
+            $slug = cms_slugify($name);
+            if ($slug === '') {
+                continue;
+            }
+            $findStmt->execute(['slug' => $slug]);
+            $tagId = $findStmt->fetchColumn();
+            if ($tagId === false) {
+                $insertStmt->execute(['name' => $name, 'slug' => $slug]);
+                $tagId = (int) $pdo->lastInsertId();
+            }
+            $mapStmt->execute(['page_id' => $pageId, 'tag_id' => (int) $tagId]);
+        }
+    };
 
     if ($action === 'create') {
         $dupError = $pg_duplicate_slug($pdo, $slug, null);
@@ -140,14 +256,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $insert = $pdo->prepare(
             'INSERT INTO pages (
                 title, slug, featured_image, content, excerpt, meta_title, meta_description,
-                faq_json, status, published_at, created_at, updated_at
+                faq_json, status, published_at, category_id, author_id, meta_keywords,
+                canonical_url, og_image, is_featured, is_trending, noindex, created_at, updated_at
             ) VALUES (
                 :title, :slug, :featured_image, :content, :excerpt, :meta_title, :meta_description,
-                :faq_json, :status, :published_at, NOW(), NOW()
+                :faq_json, :status, :published_at, :category_id, :author_id, :meta_keywords,
+                :canonical_url, :og_image, :is_featured, :is_trending, :noindex, NOW(), NOW()
             )'
         );
         $insert->execute($payload);
         $newId = (int) $pdo->lastInsertId();
+        $pg_syncTags($pdo, $newId, $tagsRaw);
+        cms_sitemap_on_article_save($pdo, [], $payload + ['page_id' => $newId]);
         $pg_redirect('Article created successfully.', 'success', 'edit=' . $newId);
     }
 
@@ -162,6 +282,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $pg_redirect($dupError, 'error', 'edit=' . $updateId);
         }
 
+        // Sitemaps module needs the pre-save row to detect publish/
+        // unpublish transitions and slug changes.
+        $pg_oldStmt = $pdo->prepare('SELECT * FROM pages WHERE page_id = :id LIMIT 1');
+        $pg_oldStmt->execute(['id' => $updateId]);
+        $pg_oldRow = $pg_oldStmt->fetch() ?: [];
+
         $update = $pdo->prepare(
             'UPDATE pages
              SET title = :title,
@@ -174,10 +300,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                  faq_json = :faq_json,
                  status = :status,
                  published_at = :published_at,
+                 category_id = :category_id,
+                 author_id = :author_id,
+                 meta_keywords = :meta_keywords,
+                 canonical_url = :canonical_url,
+                 og_image = :og_image,
+                 is_featured = :is_featured,
+                 is_trending = :is_trending,
+                 noindex = :noindex,
                  updated_at = NOW()
              WHERE page_id = :id'
         );
         $update->execute($payload + ['id' => $updateId]);
+        $pg_syncTags($pdo, $updateId, $tagsRaw);
+        cms_sitemap_on_article_save($pdo, $pg_oldRow, $payload + ['page_id' => $updateId]);
         if ($update->rowCount() < 1) {
             $exists = $pdo->prepare('SELECT page_id FROM pages WHERE page_id = :id LIMIT 1');
             $exists->execute(['id' => $updateId]);
@@ -196,6 +332,12 @@ if (isset($_SESSION['cms_flash']) && is_array($_SESSION['cms_flash'])) {
     $alerts[] = $_SESSION['cms_flash'];
     unset($_SESSION['cms_flash']);
 }
+if ($pg_schemaError !== null) {
+    $alerts[] = [
+        'type'    => 'error',
+        'message' => 'Category/tag setup could not run automatically: ' . $pg_schemaError,
+    ];
+}
 
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $editRow = null;
@@ -209,6 +351,7 @@ $listStatus = isset($_GET['status']) ? strtolower(trim((string) $_GET['status'])
 if (!in_array($listStatus, ['published', 'draft'], true)) {
     $listStatus = '';
 }
+$listCategoryId = (int) ($_GET['category_id'] ?? 0);
 
 $listPerPage  = 20;
 $listPage     = max(1, (int) ($_GET['page'] ?? 1));
@@ -217,18 +360,22 @@ $listWhere  = [];
 $listParams = [];
 if ($listSearchRaw !== '') {
     $listEscaped          = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $listSearchRaw);
-    $listWhere[]          = '(title LIKE :search OR slug LIKE :search)';
+    $listWhere[]          = '(p.title LIKE :search OR p.slug LIKE :search)';
     $listParams['search'] = '%' . $listEscaped . '%';
 }
 if ($listStatus !== '') {
-    $listWhere[]                 = 'status = :status_filter';
+    $listWhere[]                 = 'p.status = :status_filter';
     $listParams['status_filter'] = $listStatus;
+}
+if ($listCategoryId > 0) {
+    $listWhere[]              = 'p.category_id = :category_filter';
+    $listParams['category_filter'] = $listCategoryId;
 }
 
 $listWhereClause = $listWhere !== [] ? ' WHERE ' . implode(' AND ', $listWhere) : '';
 
 // Count matching rows to compute pagination
-$countStmt = $pdo->prepare('SELECT COUNT(*) FROM pages' . $listWhereClause);
+$countStmt = $pdo->prepare('SELECT COUNT(*) FROM pages p' . $listWhereClause);
 $countStmt->execute($listParams);
 $listTotalRows  = (int) $countStmt->fetchColumn();
 $listTotalPages = max(1, (int) ceil($listTotalRows / $listPerPage));
@@ -240,9 +387,14 @@ if ($listPage > $listTotalPages) {
 $listOffset = ($listPage - 1) * $listPerPage;
 
 // Fetch one page of results
-$listSql  = 'SELECT page_id, title, slug, status, published_at, updated_at FROM pages'
+$listSql  = 'SELECT p.page_id, p.title, p.slug, p.status, p.published_at, p.updated_at,
+                    p.is_featured, p.is_trending, p.views, p.featured_image, c.name AS category_name,
+                    a.name AS author_name
+             FROM pages p
+             LEFT JOIN article_categories c ON c.id = p.category_id
+             LEFT JOIN admins a ON a.admin_id = p.author_id'
           . $listWhereClause
-          . ' ORDER BY page_id DESC'
+          . ' ORDER BY p.page_id DESC'
           . ' LIMIT :limit OFFSET :offset';
 $listStmt = $pdo->prepare($listSql);
 // Bind integer params explicitly — PDO LIMIT/OFFSET requires PDO::PARAM_INT
@@ -265,13 +417,16 @@ $articleStats = is_array($statsRow) ? $statsRow : ['total' => 0, 'published_coun
 
 // ---- Pagination URL helper ----
 // Preserves search + status params; edit param intentionally excluded.
-$paginateUrl = static function (int $targetPage) use ($listSearchRaw, $listStatus, $selfUrl): string {
+$paginateUrl = static function (int $targetPage) use ($listSearchRaw, $listStatus, $listCategoryId, $selfUrl): string {
     $q = [];
     if ($listSearchRaw !== '') {
         $q['search'] = $listSearchRaw;
     }
     if ($listStatus !== '') {
         $q['status'] = $listStatus;
+    }
+    if ($listCategoryId > 0) {
+        $q['category_id'] = $listCategoryId;
     }
     $q['page'] = $targetPage;
     return $selfUrl . '?' . http_build_query($q);
@@ -280,7 +435,8 @@ $paginateUrl = static function (int $targetPage) use ($listSearchRaw, $listStatu
 if ($editId > 0) {
     $editStmt = $pdo->prepare(
         'SELECT page_id, title, slug, featured_image, content, excerpt, meta_title, meta_description,
-                faq_json, status, published_at
+                faq_json, status, published_at, category_id, author_id, meta_keywords,
+                canonical_url, og_image, is_featured, is_trending, noindex, views
          FROM pages
          WHERE page_id = :id
          LIMIT 1'
@@ -291,6 +447,23 @@ if ($editId > 0) {
         $alerts[] = ['type' => 'error', 'message' => 'Article not found.'];
         $editId = 0;
     }
+}
+
+// ---- Categories & authors for the form dropdowns ----
+$articleCategories = $pdo->query('SELECT id, name FROM article_categories ORDER BY name ASC')->fetchAll();
+$articleAuthors = $pdo->query('SELECT admin_id, name FROM admins ORDER BY name ASC')->fetchAll();
+
+// ---- Current tags for the edit form, as a comma-separated string ----
+$editTagsString = '';
+if ($editRow !== null) {
+    $tagStmt = $pdo->prepare(
+        'SELECT t.name FROM article_tags t
+         INNER JOIN article_tag_map m ON m.tag_id = t.id
+         WHERE m.page_id = :id
+         ORDER BY t.name ASC'
+    );
+    $tagStmt->execute(['id' => (int) $editRow['page_id']]);
+    $editTagsString = implode(', ', array_column($tagStmt->fetchAll(), 'name'));
 }
 
 $formatDt = static function (?string $value): string {
@@ -334,6 +507,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
     <div class="panel">
         <div class="panel__head">
             <h3 class="panel__title">Edit Article</h3>
+            <span class="panel__meta" style="margin-right:auto;margin-left:12px;"><?= (int) ($editRow['views'] ?? 0) ?> views</span>
+            <a class="panel__link" href="preview-article.php?id=<?= (int) $editRow['page_id'] ?>" target="_blank" rel="noopener">Preview</a>
             <a class="panel__link" href="<?= cms_esc($selfUrl) ?>">Cancel edit</a>
         </div>
         <form class="form-grid" method="post" action="<?= cms_esc($selfUrl) ?>">
@@ -351,9 +526,49 @@ require dirname(__DIR__) . '/includes/alerts.php';
                        value="<?= cms_esc($val($editRow, 'featured_image')) ?>"
                        placeholder="e.g. /uploads/media/2026/05/file.webp"
                        autocomplete="off">
-                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick"
+                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
-                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px (OG Image). JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+            </label>
+            <label class="field">Open Graph image
+                <input type="text" name="og_image"
+                       value="<?= cms_esc($val($editRow, 'og_image')) ?>"
+                       placeholder="Kosongkan = pakai Featured image"
+                       autocomplete="off">
+                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="og_image"
+                        style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Gambar khusus untuk preview share ke Facebook/Twitter/WhatsApp. 1200 × 630 px.</small>
+            </label>
+            <label class="field">Category
+                <select name="category_id">
+                    <option value="">— No category —</option>
+                    <?php foreach ($articleCategories as $cat) : ?>
+                        <option value="<?= (int) $cat['id'] ?>"<?= (int) ($editRow['category_id'] ?? 0) === (int) $cat['id'] ? ' selected' : '' ?>><?= cms_esc($cat['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="field">Author
+                <select name="author_id">
+                    <option value="">— Default (current admin) —</option>
+                    <?php foreach ($articleAuthors as $author) : ?>
+                        <option value="<?= (int) $author['admin_id'] ?>"<?= (int) ($editRow['author_id'] ?? 0) === (int) $author['admin_id'] ? ' selected' : '' ?>><?= cms_esc($author['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="field" style="grid-column: 1 / -1;">Tags
+                <input type="text" name="tags" value="<?= cms_esc($editTagsString) ?>" placeholder="pisahkan dengan koma, mis: bitcoin, market, regulasi">
+            </label>
+            <label class="field field--checkbox">
+                <input type="checkbox" name="is_featured" value="1"<?= (int) ($editRow['is_featured'] ?? 0) === 1 ? ' checked' : '' ?>>
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Artikel unggulan (Featured)</span>
+                </span>
+            </label>
+            <label class="field field--checkbox">
+                <input type="checkbox" name="is_trending" value="1"<?= (int) ($editRow['is_trending'] ?? 0) === 1 ? ' checked' : '' ?>>
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Artikel trending</span>
+                </span>
             </label>
             <?php $editStatus = strtolower($val($editRow, 'status')); ?>
             <label class="field field--status">Status
@@ -367,6 +582,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </label>
             <label class="field">Meta title
                 <input type="text" name="meta_title" value="<?= cms_esc($val($editRow, 'meta_title')) ?>">
+            </label>
+            <label class="field">Meta keywords
+                <input type="text" name="meta_keywords" value="<?= cms_esc($val($editRow, 'meta_keywords')) ?>" placeholder="pisahkan dengan koma">
+            </label>
+            <label class="field" style="grid-column: 1 / -1;">Canonical URL
+                <input type="text" name="canonical_url" value="<?= cms_esc($val($editRow, 'canonical_url')) ?>" placeholder="Kosongkan = pakai URL artikel ini">
+            </label>
+            <label class="field field--checkbox" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="noindex" value="1"<?= (int) ($editRow['noindex'] ?? 0) === 1 ? ' checked' : '' ?>>
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Exclude from search engines (noindex)</span>
+                    <span class="field--checkbox__desc">Removes this article from the sitemap and adds a noindex tag on the public page.</span>
+                </span>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Meta description
                 <textarea name="meta_description" rows="3"><?= cms_esc($val($editRow, 'meta_description')) ?></textarea>
@@ -393,13 +621,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </small>
                 </div>
                 <!-- AI action buttons -->
-                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;">
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-seo">Generate SEO</button>
-                    <span class="js-seo-status" style="font-size:.85em;color:var(--muted);"></span>
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-article">Generate Article</button>
-                    <span class="js-article-status" style="font-size:.85em;color:var(--muted);"></span>
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-faq">Generate FAQ</button>
-                    <span class="js-faq-status" style="font-size:.85em;color:var(--muted);"></span>
+                <div class="pg-ai-actions">
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-seo">Generate SEO</button>
+                        <span class="js-seo-status pg-ai-actions__status"></span>
+                    </div>
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-article">Generate Article</button>
+                        <span class="js-article-status pg-ai-actions__status"></span>
+                    </div>
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-faq">Generate FAQ</button>
+                        <span class="js-faq-status pg-ai-actions__status"></span>
+                    </div>
                 </div>
                 <!-- Helper boxes -->
                 <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
@@ -453,9 +687,48 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <input type="text" name="featured_image" id="pg-feat-img-create"
                        placeholder="e.g. /uploads/media/2026/05/file.webp"
                        autocomplete="off">
-                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick"
+                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
-                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px (OG Image). JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+            </label>
+            <label class="field">Open Graph image
+                <input type="text" name="og_image"
+                       placeholder="Kosongkan = pakai Featured image"
+                       autocomplete="off">
+                <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="og_image"
+                        style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Gambar khusus untuk preview share ke Facebook/Twitter/WhatsApp. 1200 × 630 px.</small>
+            </label>
+            <label class="field">Category
+                <select name="category_id">
+                    <option value="">— No category —</option>
+                    <?php foreach ($articleCategories as $cat) : ?>
+                        <option value="<?= (int) $cat['id'] ?>"><?= cms_esc($cat['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="field">Author
+                <select name="author_id">
+                    <option value="">— Default (current admin) —</option>
+                    <?php foreach ($articleAuthors as $author) : ?>
+                        <option value="<?= (int) $author['admin_id'] ?>"><?= cms_esc($author['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="field" style="grid-column: 1 / -1;">Tags
+                <input type="text" name="tags" placeholder="pisahkan dengan koma, mis: bitcoin, market, regulasi">
+            </label>
+            <label class="field field--checkbox">
+                <input type="checkbox" name="is_featured" value="1">
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Artikel unggulan (Featured)</span>
+                </span>
+            </label>
+            <label class="field field--checkbox">
+                <input type="checkbox" name="is_trending" value="1">
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Artikel trending</span>
+                </span>
             </label>
             <label class="field field--status">Status
                 <select name="status" required>
@@ -468,6 +741,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
             </label>
             <label class="field">Meta title
                 <input type="text" name="meta_title">
+            </label>
+            <label class="field">Meta keywords
+                <input type="text" name="meta_keywords" placeholder="pisahkan dengan koma">
+            </label>
+            <label class="field" style="grid-column: 1 / -1;">Canonical URL
+                <input type="text" name="canonical_url" placeholder="Kosongkan = pakai URL artikel ini">
+            </label>
+            <label class="field field--checkbox" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="noindex" value="1">
+                <span class="field--checkbox__text">
+                    <span class="field--checkbox__title">Exclude from search engines (noindex)</span>
+                    <span class="field--checkbox__desc">Removes this article from the sitemap and adds a noindex tag on the public page.</span>
+                </span>
             </label>
             <label class="field" style="grid-column: 1 / -1;">Meta description
                 <textarea name="meta_description" rows="3"></textarea>
@@ -494,13 +780,19 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     </small>
                 </div>
                 <!-- AI action buttons -->
-                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;">
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-seo">Generate SEO</button>
-                    <span class="js-seo-status" style="font-size:.85em;color:var(--muted);"></span>
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-article">Generate Article</button>
-                    <span class="js-article-status" style="font-size:.85em;color:var(--muted);"></span>
-                    <button type="button" class="admin-btn admin-btn--secondary js-generate-faq">Generate FAQ</button>
-                    <span class="js-faq-status" style="font-size:.85em;color:var(--muted);"></span>
+                <div class="pg-ai-actions">
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-seo">Generate SEO</button>
+                        <span class="js-seo-status pg-ai-actions__status"></span>
+                    </div>
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-article">Generate Article</button>
+                        <span class="js-article-status pg-ai-actions__status"></span>
+                    </div>
+                    <div class="pg-ai-actions__item">
+                        <button type="button" class="admin-btn admin-btn--secondary js-generate-faq">Generate FAQ</button>
+                        <span class="js-faq-status pg-ai-actions__status"></span>
+                    </div>
                 </div>
                 <!-- Helper boxes -->
                 <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
@@ -556,8 +848,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <option value="published" <?= $listStatus === 'published' ? 'selected' : '' ?>>Published</option>
             <option value="draft"     <?= $listStatus === 'draft'     ? 'selected' : '' ?>>Draft</option>
         </select>
+        <select name="category_id" class="pg-filter-select">
+            <option value="">Semua Kategori</option>
+            <?php foreach ($articleCategories as $cat) : ?>
+                <option value="<?= (int) $cat['id'] ?>"<?= $listCategoryId === (int) $cat['id'] ? ' selected' : '' ?>><?= cms_esc($cat['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
         <button type="submit" class="admin-btn admin-btn--secondary">Filter</button>
-        <?php if ($listSearchRaw !== '' || $listStatus !== ''): ?>
+        <?php if ($listSearchRaw !== '' || $listStatus !== '' || $listCategoryId > 0): ?>
             <a href="<?= cms_esc($selfUrl) ?>" class="admin-btn admin-btn--secondary">Reset</a>
         <?php endif; ?>
     </form>
@@ -578,18 +876,20 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <thead>
                     <tr>
                         <th class="pg-col-id">ID</th>
+                        <th class="pg-col-thumb"></th>
                         <th>Title</th>
-                        <th>Slug</th>
+                        <th>Category</th>
+                        <th>Author</th>
                         <th>Status</th>
+                        <th>Views</th>
                         <th>Published At</th>
-                        <th>Updated At</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($pagesList === []) : ?>
                         <tr>
-                            <td colspan="7" class="muted">
+                            <td colspan="9" class="muted">
                                 <?= ($listSearchRaw !== '' || $listStatus !== '') ? 'Tidak ada artikel yang cocok dengan filter.' : 'No articles yet.' ?>
                             </td>
                         </tr>
@@ -602,19 +902,36 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             ? strtotime((string) $row['updated_at'])
                             : false;
                         $isNew = $updatedTs !== false && (time() - $updatedTs) < 86400;
+                        $rowThumb = trim((string) ($row['featured_image'] ?? ''));
+                        $rowThumbSrc = $rowThumb !== '' ? app_asset_preview_url($rowThumb) : '';
                         ?>
                         <tr>
                             <td class="pg-col-id pg-id-cell"><?= $rowId ?></td>
+                            <td class="pg-thumb-cell">
+                                <?php if ($rowThumbSrc !== '') : ?>
+                                    <img class="pg-thumb" src="<?= cms_esc($rowThumbSrc) ?>" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'pg-thumb pg-thumb--ph',textContent:'No-Image'}))">
+                                <?php else : ?>
+                                    <div class="pg-thumb pg-thumb--ph">No-Image</div>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <?= cms_esc($val($row, 'title')) ?>
                                 <?php if ($isNew): ?>
                                     <span class="pg-badge-new">NEW</span>
                                 <?php endif; ?>
+                                <?php if ((int) ($row['is_featured'] ?? 0) === 1): ?>
+                                    <span class="pill pill--accent" style="margin-left:4px;">Featured</span>
+                                <?php endif; ?>
+                                <?php if ((int) ($row['is_trending'] ?? 0) === 1): ?>
+                                    <span class="pill pill--accent" style="margin-left:4px;">Trending</span>
+                                <?php endif; ?>
+                                <br><code style="font-size:11px;"><?= cms_esc($val($row, 'slug')) ?></code>
                             </td>
-                            <td><code><?= cms_esc($val($row, 'slug')) ?></code></td>
+                            <td><?= cms_esc($val($row, 'category_name') !== '' ? $val($row, 'category_name') : '—') ?></td>
+                            <td><?= cms_esc($val($row, 'author_name') !== '' ? $val($row, 'author_name') : '—') ?></td>
                             <td><span class="pill pill--<?= $published ? 'ok' : 'muted' ?>"><?= cms_esc($val($row, 'status')) ?></span></td>
+                            <td><?= (int) ($row['views'] ?? 0) ?></td>
                             <td><?= cms_esc($formatDt($row['published_at'] ?? null)) ?></td>
-                            <td><?= cms_esc($formatDt($row['updated_at'] ?? null)) ?></td>
                             <td class="table-actions">
                                 <a class="admin-btn admin-btn--sm admin-btn--secondary" href="<?= cms_esc($selfUrl) ?>?edit=<?= $rowId ?>">Edit</a>
                                 <form class="inline-form" method="post" action="<?= cms_esc($selfUrl) ?>" onsubmit="return confirm('Delete this article?');">
@@ -742,6 +1059,34 @@ require dirname(__DIR__) . '/includes/alerts.php';
     white-space: nowrap;
 }
 
+/* ---- Thumbnail column ---- */
+.pg-col-thumb { width: 56px; }
+.pg-thumb-cell { padding-top: 6px; padding-bottom: 6px; }
+.pg-thumb {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    flex-shrink: 0;
+}
+.pg-thumb--ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: var(--surface-soft);
+    border-style: dashed;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    padding: 2px;
+}
+
 /* ---- Pagination ---- */
 .pg-pagination {
     display: flex;
@@ -823,6 +1168,29 @@ require dirname(__DIR__) . '/includes/alerts.php';
     cursor: pointer;
 }
 
+/* ---- AI action buttons row (Generate SEO / Article / FAQ) ---- */
+/* Each button + its status message is one flex column, so a long status
+   text (e.g. an error message) only pushes elements below its own button
+   instead of shoving the neighbouring buttons out of line. */
+.pg-ai-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 20px;
+    margin-top: 8px;
+}
+.pg-ai-actions__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 150px;
+}
+.pg-ai-actions__status {
+    font-size: .85em;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
 /* ---- Generate SEO helper block ---- */
 .pg-seo-helper {
     display: inline-flex;
@@ -870,6 +1238,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var contentEl  = form.querySelector('[name="content"]');
       var metaTitleEl = form.querySelector('[name="meta_title"]');
       var metaDescEl  = form.querySelector('[name="meta_description"]');
+      var pageIdEl    = form.querySelector('[name="page_id"]'); // only present on the edit form
+      var notesEl     = form.querySelector('.pg-article-notes'); // shared "Catatan untuk Agent SEO" box
 
       // Get content from TinyMCE if active, otherwise fall back to textarea value
       var contentValue = '';
@@ -885,6 +1255,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
       data.append('slug',    slugEl    ? slugEl.value.trim()    : '');
       data.append('excerpt', excerptEl ? excerptEl.value.trim() : '');
       data.append('content', contentValue.trim());
+      data.append('notes',   notesEl   ? notesEl.value.trim()   : '');
+      if (pageIdEl && pageIdEl.value) { data.append('page_id', pageIdEl.value); }
       data.append('csrf_token', '<?= cms_csrf_token() ?>');
 
       btn.disabled   = true;
@@ -894,7 +1266,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var controller = new AbortController();
       var abortTimer = setTimeout(function () { controller.abort(); }, 65000);
 
-      fetch('<?= cms_esc(dirname($_SERVER['SCRIPT_NAME'] ?? '') . '/../../api/seo-generate.php') ?>', {
+      fetch('<?= cms_esc(cms_api_href('seo-generate.php')) ?>', {
         method: 'POST',
         body:   data,
         signal: controller.signal,
@@ -944,12 +1316,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var excerptEl   = form.querySelector('[name="excerpt"]');
       var metaTitleEl = form.querySelector('[name="meta_title"]');
       var metaDescEl  = form.querySelector('[name="meta_description"]');
+      var pageIdEl    = form.querySelector('[name="page_id"]'); // only present on the edit form
 
       var contentEl = form.querySelector('[name="content"]');
 
       var data = new FormData();
       data.append('title', titleEl ? titleEl.value.trim() : '');
       data.append('notes', notesEl ? notesEl.value.trim() : '');
+      if (pageIdEl && pageIdEl.value) { data.append('page_id', pageIdEl.value); }
       data.append('csrf_token', '<?= cms_csrf_token() ?>');
 
       btn.disabled = true;
@@ -959,7 +1333,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var controller = new AbortController();
       var abortTimer = setTimeout(function () { controller.abort(); }, 65000);
 
-      fetch('<?= cms_esc(dirname($_SERVER['SCRIPT_NAME'] ?? '') . '/../../api/article-generate.php') ?>', {
+      fetch('<?= cms_esc(cms_api_href('article-generate.php')) ?>', {
         method: 'POST',
         body:   data,
         signal: controller.signal,
@@ -1019,6 +1393,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var excerptEl = form.querySelector('[name="excerpt"]');
       var notesEl   = form.querySelector('.pg-article-notes');
       var faqEl     = form.querySelector('[name="faq_json"]');
+      var pageIdEl  = form.querySelector('[name="page_id"]'); // only present on the edit form
 
       // Read content from TinyMCE if active, otherwise fall back to textarea value
       var contentValue = '';
@@ -1034,6 +1409,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       data.append('content',    contentValue.trim());
       data.append('excerpt',    excerptEl ? excerptEl.value.trim() : '');
       data.append('dev_notes',  notesEl   ? notesEl.value.trim()   : '');
+      if (pageIdEl && pageIdEl.value) { data.append('page_id', pageIdEl.value); }
       data.append('csrf_token', '<?= cms_csrf_token() ?>');
 
       btn.disabled = true;
@@ -1043,7 +1419,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
       var controller = new AbortController();
       var abortTimer = setTimeout(function () { controller.abort(); }, 65000);
 
-      fetch('<?= cms_esc(dirname($_SERVER['SCRIPT_NAME'] ?? '') . '/../../api/faq-generate.php') ?>', {
+      fetch('<?= cms_esc(cms_api_href('faq-generate.php')) ?>', {
         method: 'POST',
         body:   data,
         signal: controller.signal,
@@ -1114,8 +1490,9 @@ require dirname(__DIR__) . '/includes/alerts.php';
     document.addEventListener('click', function (e) {
         var btn = e.target.closest('.js-pg-img-pick');
         if (!btn) { return; }
-        var form  = btn.closest('form');
-        var input = form ? form.querySelector('[name="featured_image"]') : null;
+        var form       = btn.closest('form');
+        var targetName = btn.getAttribute('data-target') || 'featured_image';
+        var input      = form ? form.querySelector('[name="' + targetName + '"]') : null;
         if (!input) { return; }
         openPicker(input);
     });

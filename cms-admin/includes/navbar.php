@@ -2,6 +2,16 @@
 declare(strict_types=1);
 
 $pageTitle = $pageTitle ?? 'Dashboard';
+
+// Notification bell — was a disabled "coming soon" placeholder, now backed
+// by real data: failed generations + SEO recommendations awaiting review.
+// navbar.php is required on every admin page, so growth-agent-service.php
+// is loaded defensively here rather than assuming a specific page already
+// pulled it in.
+require_once dirname(__DIR__) . '/includes/growth-agent-service.php';
+$cmsGrowthNotif = (isset($pdo) && $pdo instanceof PDO)
+    ? cms_growth_agent_notifications($pdo, 8)
+    : ['count' => 0, 'items' => []];
 ?>
 <div class="admin-main">
     <header class="admin-navbar">
@@ -17,17 +27,60 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                 <input type="search"
                        id="admin-search-input"
                        class="admin-search__input"
-                       placeholder="Search products, pages, gallery, testimonials, messages…"
+                       placeholder="Search pages, articles, messages…"
                        autocomplete="off"
                        data-search-action="<?= cms_esc(cms_action_href('search.php')) ?>">
                 <div class="admin-search__results" id="admin-search-results" hidden></div>
             </label>
         </div>
         <div class="admin-navbar__right">
-            <button type="button" class="admin-bell" title="Notifications (coming soon)" aria-label="Notifications" disabled>
-                <span class="admin-bell__icon" aria-hidden="true">🔔</span>
-                <span class="admin-bell__dot" aria-hidden="true"></span>
-            </button>
+            <div class="admin-notif" id="admin-notif">
+                <button type="button"
+                        class="admin-bell"
+                        id="admin-notif-toggle"
+                        title="Notifications"
+                        aria-label="Notifications"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        aria-controls="admin-notif-panel">
+                    <span class="admin-bell__icon" aria-hidden="true">🔔</span>
+                    <?php if ($cmsGrowthNotif['count'] > 0) : ?>
+                        <span class="admin-bell__dot" aria-hidden="true"></span>
+                    <?php endif; ?>
+                </button>
+                <div class="admin-notif__panel" id="admin-notif-panel" hidden>
+                    <div class="admin-notif__head">
+                        <span>Growth Agent</span>
+                        <?php if ($cmsGrowthNotif['count'] > 0) : ?>
+                            <span class="pill pill--warn"><?= (int) $cmsGrowthNotif['count'] ?> perlu perhatian</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($cmsGrowthNotif['items'] === []) : ?>
+                        <div class="admin-notif__empty">Tidak ada job yang gagal atau menunggu review saat ini.</div>
+                    <?php else : ?>
+                        <?php foreach ($cmsGrowthNotif['items'] as $notifJob) : ?>
+                            <?php
+                            $notifIsSeoRec = $notifJob['job_type'] === 'seo_recommendation' && $notifJob['status'] === 'manual_action';
+                            $notifHref = $notifIsSeoRec
+                                ? cms_nav_href('seo-recommendation-review.php') . '?job_id=' . (int) $notifJob['id']
+                                : cms_nav_href('growth-agent.php');
+                            $notifPill = $notifJob['status'] === 'failed' ? 'warn' : 'info';
+                            $notifLabel = $notifJob['status'] === 'failed' ? 'Gagal' : 'Perlu direview';
+                            ?>
+                            <a class="admin-notif__item" href="<?= cms_esc($notifHref) ?>">
+                                <span class="admin-notif__item-title">
+                                    <?= $notifJob['page_title'] ? cms_esc((string) $notifJob['page_title']) : cms_esc((string) $notifJob['job_type']) ?>
+                                </span>
+                                <span class="admin-notif__item-meta">
+                                    <span class="pill pill--<?= $notifPill ?>"><?= cms_esc($notifLabel) ?></span>
+                                    <span class="muted"><?= cms_esc((string) $notifJob['job_type']) ?></span>
+                                </span>
+                            </a>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                    <a class="admin-notif__viewall" href="<?= cms_esc(cms_nav_href('growth-agent.php')) ?>">Lihat semua di Growth Agent &rarr;</a>
+                </div>
+            </div>
             <label class="theme-switcher" for="theme-switcher">
                 <span class="theme-switcher__icon" aria-hidden="true">🎨</span>
                 <select class="theme-switcher__select"

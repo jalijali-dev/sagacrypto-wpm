@@ -5,6 +5,9 @@ require_once __DIR__ . '/../includes/upload.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Same tier as pages/site-settings.php — admin-tier.
+cms_require_role(['superadmin', 'admin']);
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/site-settings.php', true, 302);
     exit;

@@ -6,18 +6,22 @@ if (!isset($cmsDashboardFragment)) {
     exit;
 }
 
-// ── Stats queries — one fetch per table, safe fallback to [] on empty result ──
+// ── Stats queries — one fetch per table, safe fallback to [] / 0 on any error ──
+// Every stat here matches the Phase 8 dashboard-widget spec: articles,
+// categories, views, trending, ads, and live/crypto API status. Each query
+// is wrapped defensively since some tables are created lazily by their own
+// admin pages on first visit and may not exist yet on a fresh install.
 
-$productStats = $pdo->query(
-    'SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active
-     FROM products'
-)->fetch() ?: [];
+require_once dirname(__DIR__) . '/includes/crypto-api.php';
 
-$galleryStats = $pdo->query(
-    'SELECT COUNT(*) AS total FROM gallery'
-)->fetch() ?: [];
+$safeScalar = static function (PDO $pdo, string $sql): int {
+    try {
+        $row = $pdo->query($sql)->fetch();
+        return (int) ($row[0] ?? array_values($row ?: [0])[0] ?? 0);
+    } catch (\Throwable $e) {
+        return 0;
+    }
+};
 
 $messageStats = $pdo->query(
     'SELECT
@@ -29,9 +33,24 @@ $messageStats = $pdo->query(
 $pageStats = $pdo->query(
     'SELECT
         COUNT(*) AS total,
-        SUM(CASE WHEN status = \'published\' THEN 1 ELSE 0 END) AS published
+        SUM(CASE WHEN status = \'published\' THEN 1 ELSE 0 END) AS published,
+        SUM(CASE WHEN status = \'draft\' THEN 1 ELSE 0 END) AS draft,
+        SUM(CASE WHEN is_trending = 1 THEN 1 ELSE 0 END) AS trending,
+        SUM(views) AS total_views
      FROM pages'
 )->fetch() ?: [];
+
+$totalCategories = $safeScalar($pdo, 'SELECT COUNT(*) FROM article_categories');
+
+$cryptoSettings = [];
+try {
+    $cryptoSettings = cms_crypto_get_settings($pdo);
+} catch (\Throwable $e) {
+    $cryptoSettings = [];
+}
+$cryptoStatusText = (int) ($cryptoSettings['is_active'] ?? 0) === 1
+    ? ucfirst((string) ($cryptoSettings['last_test_status'] ?? 'active'))
+    : 'Inactive';
 
 $redirectStats = $pdo->query(
     'SELECT COUNT(*) AS total FROM seo_redirects'
@@ -49,29 +68,39 @@ try {
 // Build stats cards array — same structure the template iterates.
 $statsCards = [
     [
-        'label' => 'Active products',
-        'value' => (string) (int) ($productStats['active'] ?? 0),
-        'hint'  => ((int) ($productStats['total'] ?? 0)) . ' total in catalog',
+        'label' => 'Total articles',
+        'value' => (string) (int) ($pageStats['total'] ?? 0),
+        'hint'  => (int) ($pageStats['published'] ?? 0) . ' published',
     ],
     [
-        'label' => 'Gallery items',
-        'value' => (string) (int) ($galleryStats['total'] ?? 0),
-        'hint'  => 'Images in gallery',
-    ],
-    [
-        'label' => 'Contact messages',
-        'value' => (string) (int) ($messageStats['total'] ?? 0),
-        'hint'  => ((int) ($messageStats['unread'] ?? 0)) . ' unread',
-    ],
-    [
-        'label' => 'Published pages',
+        'label' => 'Published articles',
         'value' => (string) (int) ($pageStats['published'] ?? 0),
-        'hint'  => ((int) ($pageStats['total'] ?? 0)) . ' total articles',
+        'hint'  => 'Live on the site',
     ],
     [
-        'label' => 'SEO redirects',
-        'value' => (string) (int) ($redirectStats['total'] ?? 0),
-        'hint'  => '301 / 302 rules',
+        'label' => 'Draft articles',
+        'value' => (string) (int) ($pageStats['draft'] ?? 0),
+        'hint'  => 'Awaiting publish',
+    ],
+    [
+        'label' => 'Total categories',
+        'value' => (string) $totalCategories,
+        'hint'  => 'Article categories',
+    ],
+    [
+        'label' => 'Total views',
+        'value' => (string) (int) ($pageStats['total_views'] ?? 0),
+        'hint'  => 'All-time article views',
+    ],
+    [
+        'label' => 'Trending articles',
+        'value' => (string) (int) ($pageStats['trending'] ?? 0),
+        'hint'  => 'Flagged as trending',
+    ],
+    [
+        'label' => 'Crypto API status',
+        'value' => $cryptoStatusText,
+        'hint'  => (string) ($cryptoSettings['provider'] ?? '—'),
     ],
     [
         'label' => 'Media files',
@@ -80,14 +109,12 @@ $statsCards = [
     ],
 ];
 
-// ── Recent products ───────────────────────────────────────────────────────────
+// ── Recent pages & articles ───────────────────────────────────────────────────
 
-$recentProducts = $pdo->query(
-    'SELECT p.id, p.name, p.slug, p.price, p.is_active,
-            c.name AS category_name
-     FROM products p
-     LEFT JOIN product_categories c ON c.id = p.category_id
-     ORDER BY p.id DESC
+$recentPages = $pdo->query(
+    'SELECT page_id, title, slug, status, updated_at
+     FROM pages
+     ORDER BY updated_at DESC, page_id DESC
      LIMIT 5'
 )->fetchAll();
 
@@ -98,6 +125,17 @@ $latestMessages = $pdo->query(
      FROM contact_messages
      ORDER BY created_at DESC, id DESC
      LIMIT 5'
+)->fetchAll();
+
+// ── Top 5 articles by views — replaces the old static "Traffic snapshot"
+// placeholder bars with real data. Published only (a draft's view count
+// isn't meaningful traffic yet).
+$topViewedArticles = $pdo->query(
+    'SELECT page_id, title, views
+       FROM pages
+      WHERE status = \'published\'
+      ORDER BY views DESC, page_id DESC
+      LIMIT 5'
 )->fetchAll();
 
 // ── Date formatter ────────────────────────────────────────────────────────────
@@ -124,40 +162,102 @@ $fmtDt = static function (?string $value): string {
     <div class="admin-grid admin-grid--2">
         <section class="panel">
             <div class="panel__head">
-                <h2 class="panel__title">Recent products</h2>
-                <a class="panel__link" href="<?= cms_esc(cms_nav_href('products.php')) ?>">View all</a>
+                <h2 class="panel__title">Recent pages &amp; articles</h2>
+                <a class="panel__link" href="<?= cms_esc(cms_nav_href('pages.php')) ?>">View all</a>
             </div>
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
                         <tr>
-                            <th>Product</th>
+                            <th>Title</th>
                             <th>Slug</th>
-                            <th>Category</th>
-                            <th>Price</th>
                             <th>Status</th>
+                            <th>Updated</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($recentProducts === []) : ?>
-                            <tr><td colspan="5" class="muted">No products yet.</td></tr>
+                        <?php if ($recentPages === []) : ?>
+                            <tr><td colspan="4" class="muted">No pages or articles yet.</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($recentProducts as $row) : ?>
-                            <?php $active = (int) ($row['is_active'] ?? 0) === 1; ?>
+                        <?php foreach ($recentPages as $row) : ?>
+                            <?php $published = ($row['status'] ?? '') === 'published'; ?>
                             <tr>
-                                <td><?= cms_esc((string) ($row['name'] ?? '')) ?></td>
+                                <td><?= cms_esc((string) ($row['title'] ?? '')) ?></td>
                                 <td><code><?= cms_esc((string) ($row['slug'] ?? '')) ?></code></td>
-                                <td><?= cms_esc((string) ($row['category_name'] ?? '—')) ?></td>
-                                <td><?= cms_esc((string) ($row['price'] ?? '')) ?></td>
                                 <td>
-                                    <span class="pill pill--<?= $active ? 'ok' : 'muted' ?>">
-                                        <?= $active ? 'Active' : 'Inactive' ?>
+                                    <span class="pill pill--<?= $published ? 'ok' : 'muted' ?>">
+                                        <?= cms_esc(ucfirst((string) ($row['status'] ?? 'draft'))) ?>
                                     </span>
                                 </td>
+                                <td><?= cms_esc($fmtDt($row['updated_at'] ?? null)) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel__head">
+                <h2 class="panel__title">Quick actions</h2>
+            </div>
+            <?php
+            // Only link to pages the current role can actually open — see
+            // cms_require_role() in functions.php for the tier breakdown.
+            $qaIsAdminUp = cms_is_admin_or_above();
+            $qaIsSuper = cms_is_superadmin();
+            ?>
+            <div class="quick-actions">
+                <?php if ($qaIsAdminUp) : ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('about-settings.php')) ?>">Edit About</a>
+                <?php endif; ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('pages.php')) ?>">Manage pages &amp; articles</a>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('media-library.php')) ?>">Media library</a>
+                <?php if ($qaIsAdminUp) : ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('contact-messages.php')) ?>">Contact messages</a>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('ads.php')) ?>">Manage ads</a>
+                <?php endif; ?>
+                <?php if ($qaIsSuper) : ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('crypto-api.php')) ?>">Crypto API settings</a>
+                <?php endif; ?>
+                <?php if ($qaIsAdminUp) : ?>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-redirects.php')) ?>">SEO redirects</a>
+                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-schema.php')) ?>">SEO schema</a>
+                <?php endif; ?>
+            </div>
+        </section>
+    </div>
+
+    <div class="admin-grid admin-grid--2">
+        <section class="panel">
+            <div class="panel__head">
+                <h2 class="panel__title">Artikel Terpopuler</h2>
+                <span class="panel__meta">Top 5 by views</span>
+            </div>
+            <div class="views-chart">
+                <?php if ($topViewedArticles === []) : ?>
+                    <p class="muted">Belum ada artikel published untuk ditampilkan.</p>
+                <?php else : ?>
+                    <?php $viewsMax = max(1, (int) $topViewedArticles[0]['views']); ?>
+                    <?php foreach ($topViewedArticles as $viewsIdx => $viewsRow) : ?>
+                        <?php
+                        $viewsCount = (int) ($viewsRow['views'] ?? 0);
+                        // Minimum 4% so a 0-view (or far-behind-#1) article still
+                        // shows a sliver of bar instead of visually vanishing.
+                        $viewsPct = max(4, (int) round(($viewsCount / $viewsMax) * 100));
+                        ?>
+                        <a class="views-chart__row" href="<?= cms_esc(cms_nav_href('pages.php')) ?>?edit=<?= (int) $viewsRow['page_id'] ?>">
+                            <div class="views-chart__label">
+                                <span class="views-chart__rank">#<?= $viewsIdx + 1 ?></span>
+                                <span class="views-chart__title"><?= cms_esc((string) $viewsRow['title']) ?></span>
+                            </div>
+                            <div class="views-chart__track">
+                                <div class="views-chart__fill" style="width: <?= $viewsPct ?>%;"></div>
+                            </div>
+                            <span class="views-chart__value"><?= number_format($viewsCount, 0, ',', '.') ?> views</span>
+                        </a>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </section>
 
@@ -187,41 +287,6 @@ $fmtDt = static function (?string $value): string {
                     </li>
                 <?php endforeach; ?>
             </ul>
-        </section>
-    </div>
-
-    <div class="admin-grid admin-grid--2">
-        <section class="panel">
-            <div class="panel__head">
-                <h2 class="panel__title">Quick actions</h2>
-            </div>
-            <div class="quick-actions">
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('landing-page.php')) ?>">Edit landing page</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('products.php')) ?>">Manage products</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('gallery.php')) ?>">Manage gallery</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('contact-messages.php')) ?>">Contact messages</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-redirects.php')) ?>">SEO redirects</a>
-                <a class="quick-actions__btn" href="<?= cms_esc(cms_nav_href('seo-schema.php')) ?>">SEO schema</a>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel__head">
-                <h2 class="panel__title">Traffic snapshot</h2>
-                <span class="panel__meta">Placeholder chart</span>
-            </div>
-            <div class="chart-placeholder" role="img" aria-label="Placeholder chart area">
-                <div class="chart-placeholder__bars">
-                    <span style="height:42%"></span>
-                    <span style="height:68%"></span>
-                    <span style="height:55%"></span>
-                    <span style="height:80%"></span>
-                    <span style="height:63%"></span>
-                    <span style="height:74%"></span>
-                    <span style="height:48%"></span>
-                </div>
-                <p class="chart-placeholder__note">Chart wiring will connect later — layout preview only.</p>
-            </div>
         </section>
     </div>
 </section>

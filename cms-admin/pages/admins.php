@@ -4,6 +4,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Admin user management (create/edit/delete accounts, assign roles) is
+// superadmin-only — see cms_require_role() docblock in functions.php for
+// the full tier breakdown.
+cms_require_role(['superadmin']);
+
 $pageTitle = 'Admin Users';
 $currentNav = 'admins';
 $breadcrumbs = [
@@ -21,7 +26,17 @@ $currentAdminId = (int) ($_SESSION['cms_admin_id'] ?? 0);
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $editAdmin = null;
 
-$roleOptions = ['Super Admin', 'Editor', 'Admin'];
+// Values MUST match the `admins.role` DB enum exactly (lowercase, no
+// spaces) — the labels shown to the admin can be friendlier. Previously
+// this list held ['Super Admin', 'Editor', 'Admin'] (title case, with a
+// space in "Super Admin"), which is not a valid value for that enum column
+// at all — creating/editing an admin's role through this form would have
+// silently failed to save the intended role. Fixed 15 Jul 2026.
+$roleOptions = [
+    'superadmin' => 'Super Admin',
+    'admin'      => 'Admin',
+    'editor'     => 'Editor',
+];
 
 $stmt = $pdo->query(
     'SELECT admin_id, name, email, role, is_active, created_at, updated_at
@@ -81,14 +96,16 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <label class="field">New password <span class="muted">(leave blank to keep current)</span><input type="password" name="password" autocomplete="new-password" placeholder="••••••••"></label>
             <?php
             $editRoleOptions = $roleOptions;
-            if (!in_array((string) $editAdmin['role'], $editRoleOptions, true)) {
-                $editRoleOptions = array_merge([(string) $editAdmin['role']], $editRoleOptions);
+            if (!array_key_exists((string) $editAdmin['role'], $editRoleOptions)) {
+                // Unknown/legacy value already in the DB — show it as-is so
+                // saving without touching this field doesn't silently change it.
+                $editRoleOptions = [(string) $editAdmin['role'] => (string) $editAdmin['role']] + $editRoleOptions;
             }
             ?>
             <label class="field">Role
                 <select name="role" required>
-                    <?php foreach ($editRoleOptions as $opt) : ?>
-                        <option value="<?= cms_esc($opt) ?>"<?= ($editAdmin['role'] === $opt) ? ' selected' : '' ?>><?= cms_esc($opt) ?></option>
+                    <?php foreach ($editRoleOptions as $value => $label) : ?>
+                        <option value="<?= cms_esc($value) ?>"<?= ($editAdmin['role'] === $value) ? ' selected' : '' ?>><?= cms_esc($label) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -116,8 +133,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
             <label class="field">Password<input type="password" name="password" required autocomplete="new-password"></label>
             <label class="field">Role
                 <select name="role" required>
-                    <?php foreach ($roleOptions as $opt) : ?>
-                        <option value="<?= cms_esc($opt) ?>"><?= cms_esc($opt) ?></option>
+                    <?php foreach ($roleOptions as $value => $label) : ?>
+                        <option value="<?= cms_esc($value) ?>"<?= $value === 'editor' ? ' selected' : '' ?>><?= cms_esc($label) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -167,7 +184,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <tr>
                             <td><?= cms_esc($row['name']) ?><?= $isSelf ? ' <span class="pill pill--muted">You</span>' : '' ?></td>
                             <td><?= cms_esc($row['email']) ?></td>
-                            <td><span class="pill pill--accent"><?= cms_esc($row['role']) ?></span></td>
+                            <td><span class="pill pill--accent"><?= cms_esc($roleOptions[$row['role']] ?? $row['role']) ?></span></td>
                             <td><span class="pill pill--<?= $active ? 'ok' : 'muted' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td>
                             <td><?= cms_esc($formatDt($row['created_at'])) ?></td>
                             <td><?= cms_esc($formatDt($row['updated_at'])) ?></td>

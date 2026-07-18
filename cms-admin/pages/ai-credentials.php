@@ -5,6 +5,10 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/ai-helpers.php';
 
+// Holds raw AI provider API keys — superadmin-only. See cms_require_role()
+// in functions.php for the full tier breakdown.
+cms_require_role(['superadmin']);
+
 $pageTitle = 'AI Credentials';
 $currentNav = 'ai-credentials';
 $breadcrumbs = [

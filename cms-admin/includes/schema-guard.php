@@ -30,3 +30,27 @@ if (!function_exists('cms_ensure_column')) {
         return true; // column just added
     }
 }
+
+/**
+ * Companion helper: create a whole table if it doesn't exist yet.
+ * `$definitionSql` is the full column/constraint list that goes between
+ * the parens of CREATE TABLE — safe to call on every page load.
+ */
+if (!function_exists('cms_ensure_table')) {
+    function cms_ensure_table(PDO $pdo, string $table, string $definitionSql): bool
+    {
+        $check = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME   = :table'
+        );
+        $check->execute(['table' => $table]);
+        if ((int) $check->fetchColumn() > 0) {
+            return false; // already existed
+        }
+
+        $pdo->exec("CREATE TABLE `{$table}` ({$definitionSql}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        return true; // table just created
+    }
+}

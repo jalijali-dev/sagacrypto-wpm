@@ -506,10 +506,6 @@ $fav     = cms_esc(cms_favicon_url());
             <p class="lp-notice lp-notice--error" role="alert">
                 <?= cms_esc($loginError) ?>
             </p>
-        <?php else : ?>
-            <p class="lp-notice lp-notice--info" aria-live="polite">
-                <?= cms_esc(CMS_DEMO_NOTICE) ?>
-            </p>
         <?php endif; ?>
 
         <!-- ── Login form ── -->

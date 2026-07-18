@@ -17,11 +17,11 @@ function banners_is_valid_button_url(string $url): bool
         return false;
     }
 
-    if (preg_match('#^#[a-zA-Z0-9._~-]+$#', $url) === 1) {
+    if (preg_match('%^#[a-zA-Z0-9._~-]+$%', $url) === 1) {
         return true;
     }
 
-    if (preg_match('#^/#[a-zA-Z0-9._~-]+$#', $url) === 1) {
+    if (preg_match('%^/#[a-zA-Z0-9._~-]+$%', $url) === 1) {
         return true;
     }
 

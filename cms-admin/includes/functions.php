@@ -3,6 +3,20 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/config/app.php';
 
+/**
+ * Server-side slugify — used when auto-creating categories/tags from admin
+ * input (the client-side JS slugify in pages.php only covers the article
+ * title field itself).
+ */
+if (!function_exists('cms_slugify')) {
+    function cms_slugify(string $text): string
+    {
+        $text = strtolower(trim($text));
+        $text = preg_replace('/[^a-z0-9]+/', '-', $text) ?? '';
+        return trim($text, '-');
+    }
+}
+
 function cms_session_start(): void
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -64,6 +78,66 @@ function cms_verify_csrf(): void
     }
 }
 
+/**
+ * ── Role-based access control ─────────────────────────────────────────────
+ *
+ * Three roles, stored verbatim in `admins.role` (DB enum: 'superadmin',
+ * 'admin', 'editor' — lowercase, no spaces; the admin-facing form in
+ * admins.php shows friendlier labels but always submits one of these three
+ * raw values). Session value is set once at login (login.php) and never
+ * re-checked against the DB per-request, so a role change only takes effect
+ * the next time that admin logs in — same tradeoff the rest of the session
+ * already makes for name/email.
+ *
+ * Access tiers (15 Jul 2026, per explicit user request — previously every
+ * logged-in admin had identical access regardless of role):
+ *   - editor:     Pages & Articles (+ Categories/Tags), Media Library,
+ *                 SEO Dashboard, Banners. Nothing else.
+ *   - admin:      Everything editor has, plus everything else EXCEPT
+ *                 Admin Users, AI Credentials, and Crypto API settings
+ *                 (all three touch account/API-key secrets).
+ *   - superadmin: Everything, no restrictions. Also the only role that can
+ *                 create/edit/view "External Ad Code" ads (see ads.php —
+ *                 separate, pre-existing restriction, unrelated to the
+ *                 tiers above).
+ */
+function cms_admin_role(): string
+{
+    return (string) ($_SESSION['cms_admin_role'] ?? '');
+}
+
+function cms_is_superadmin(): bool
+{
+    return cms_admin_role() === 'superadmin';
+}
+
+/** True for 'admin' or 'superadmin' — false for 'editor' or anything unset. */
+function cms_is_admin_or_above(): bool
+{
+    return in_array(cms_admin_role(), ['superadmin', 'admin'], true);
+}
+
+/**
+ * Gate an entire page to a set of roles. Call right after requiring
+ * auth.php (auth.php only checks "logged in", not "logged in as which
+ * role"). On denial: flash message + redirect to the dashboard — the admin
+ * never sees a bare 403, just lands somewhere useful with an explanation.
+ *
+ * @param list<string> $allowedRoles e.g. ['superadmin', 'admin']
+ */
+function cms_require_role(array $allowedRoles): void
+{
+    if (in_array(cms_admin_role(), $allowedRoles, true)) {
+        return;
+    }
+    $_SESSION['cms_flash'] = [
+        'type' => 'error',
+        'message' => 'Kamu tidak punya akses ke halaman ini. Hubungi Super Admin kalau merasa ini seharusnya diizinkan.',
+    ];
+    header('Location: ' . cms_dashboard_href(), true, 302);
+    exit;
+}
+
 function cms_is_demo_authenticated(): bool
 {
     return !empty($_SESSION['cms_demo_auth']);
@@ -121,6 +195,19 @@ function cms_logout_href(): string
 function cms_action_href(string $actionFilename): string
 {
     return cms_is_pages_subdirectory() ? '../actions/' . $actionFilename : 'actions/' . $actionFilename;
+}
+
+/**
+ * Prefix to reach cms-admin/api/*.php (AI content-generation endpoints)
+ * from the current script. Same topology-agnostic pattern as
+ * cms_action_href() — detected from the on-disk script location, so it
+ * resolves correctly whether cms-admin/ is nested under a project root
+ * (local dev) or served as its own (sub)domain's document root
+ * (production, e.g. wpm.sagacrypto.com).
+ */
+function cms_api_href(string $apiFilename): string
+{
+    return cms_is_pages_subdirectory() ? '../api/' . $apiFilename : 'api/' . $apiFilename;
 }
 
 /**
@@ -186,9 +273,23 @@ function cms_public_site_url(): string
     return cms_public_base_prefix() . 'index.php';
 }
 
+/**
+ * Admin panel browser-tab icon. This is the WPM admin brand (a fixed
+ * template asset shipped with the panel), deliberately independent of
+ * Site Settings — site_settings.logo_path/favicon_path is the PUBLIC
+ * site's brand (e.g. the SagaCrypto logo), a completely different
+ * identity from the admin panel's own "WPM" mark. An earlier version of
+ * this function pulled from site_settings instead, which incorrectly
+ * showed the public site's logo as the admin panel's tab icon.
+ *
+ * cms-admin/assets/img/logo.png already IS the correct WPM mark (black
+ * monogram, transparent background) — same asset used for the sidebar
+ * brand on the light theme (see includes/sidebar.php) — so the favicon
+ * just reuses it via cms_asset_url(), same as every other admin asset.
+ */
 function cms_favicon_url(): string
 {
-    return cms_public_base_prefix() . 'uploads/site/favicon/favicon.png';
+    return cms_asset_url('img/logo.png');
 }
 
 function cms_esc(?string $value): string
@@ -196,13 +297,35 @@ function cms_esc(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
-function cms_sample_data(): array
+/**
+ * Best-effort sanitizer for the Advertisements "Custom HTML" ad type
+ * (cms-admin/pages/ads.php, ad_type='html'). Applied at SAVE time, not at
+ * render time, so the stored value is already safe and the frontend never
+ * needs to re-sanitize on every page view.
+ *
+ * This is a regex-based blocklist, not a full HTML parser — it strips the
+ * dangerous constructs explicitly called out in the brief (script/iframe/
+ * object/embed tags, on*="" event handler attributes, javascript: URLs).
+ * It is intentionally NOT applied to "External Ad Code" (ad_type =
+ * 'external_code'), which is a separate, more trusted field restricted to
+ * superadmin — see the role check in ads.php's POST handler — precisely
+ * because legitimate ad-network embed codes are usually <script> tags
+ * that this sanitizer would otherwise strip.
+ */
+function cms_sanitize_ad_html(string $html): string
 {
-    static $cache = null;
-    if ($cache === null) {
-        /** @var array $data */
-        $data = require dirname(__DIR__) . '/data/sample-data.php';
-        $cache = $data;
-    }
-    return $cache;
+    // Whole dangerous elements, tags + their content.
+    $html = preg_replace('#<script\b[^>]*>.*?</script>#is', '', $html) ?? $html;
+    $html = preg_replace('#<iframe\b[^>]*>.*?</iframe>#is', '', $html) ?? $html;
+    $html = preg_replace('#<style\b[^>]*>.*?</style>#is', '', $html) ?? $html;
+    // Self-closing / no-content-model dangerous tags.
+    $html = preg_replace('#<(object|embed|applet|form|link|meta|base)\b[^>]*/?>#is', '', $html) ?? $html;
+    // Any on*="..." / on*='...' / on*=bareword event handler attribute.
+    $html = preg_replace('#\s+on[a-z]+\s*=\s*"[^"]*"#is', '', $html) ?? $html;
+    $html = preg_replace("#\\s+on[a-z]+\\s*=\\s*'[^']*'#is", '', $html) ?? $html;
+    $html = preg_replace('#\s+on[a-z]+\s*=\s*[^\s>]+#is', '', $html) ?? $html;
+    // javascript:/data: URLs inside href/src attributes.
+    $html = preg_replace('#(href|src)(\s*=\s*)(["\'])\s*(javascript|data):[^"\']*\3#is', '$1$2$3#$3', $html) ?? $html;
+
+    return trim($html);
 }

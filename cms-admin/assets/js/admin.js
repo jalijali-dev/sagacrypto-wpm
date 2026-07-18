@@ -138,8 +138,8 @@
 /* ============================================================
    Global search (navbar)
    Debounced AJAX call to actions/search.php, renders a grouped
-   dropdown of results (Products, Pages & Articles, Gallery,
-   Testimonials, Contact Messages) under the search box.
+   dropdown of results (Pages & Articles, Contact Messages) under
+   the search box.
    ============================================================ */
 (function () {
   var input = document.getElementById("admin-search-input");
@@ -241,6 +241,50 @@
     if (e.key === "Escape") {
       hideResults();
       input.blur();
+    }
+  });
+}());
+
+/* ============================================================
+   Notification bell — Growth Agent jobs needing attention
+   (failed generations, SEO recommendations awaiting review).
+   Server-rendered dropdown, just a plain show/hide toggle —
+   same click-outside-to-close pattern as the search box above.
+   ============================================================ */
+(function () {
+  var toggle = document.getElementById("admin-notif-toggle");
+  var panel = document.getElementById("admin-notif-panel");
+  var wrapper = document.getElementById("admin-notif");
+  if (!toggle || !panel || !wrapper) { return; }
+
+  function isOpen() {
+    return !panel.hasAttribute("hidden");
+  }
+
+  function setOpen(open) {
+    if (open) {
+      panel.removeAttribute("hidden");
+      toggle.setAttribute("aria-expanded", "true");
+    } else {
+      panel.setAttribute("hidden", "hidden");
+      toggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  toggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    setOpen(!isOpen());
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!wrapper.contains(e.target)) {
+      setOpen(false);
+    }
+  });
+
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      setOpen(false);
     }
   });
 }());

@@ -5,6 +5,10 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/ai-helpers.php';
 
+// Site-wide configuration is admin-tier — see cms_require_role() in
+// functions.php for the full tier breakdown.
+cms_require_role(['superadmin', 'admin']);
+
 $pageTitle = 'AI Sandbox';
 $currentNav = 'ai-sandbox';
 $breadcrumbs = [

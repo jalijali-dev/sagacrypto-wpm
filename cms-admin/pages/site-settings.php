@@ -4,6 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Site-wide configuration is admin-tier — see cms_require_role() in
+// functions.php for the full tier breakdown.
+cms_require_role(['superadmin', 'admin']);
+
 $pageTitle = 'Site Settings';
 $currentNav = 'site-settings';
 $breadcrumbs = [
@@ -178,7 +182,14 @@ require dirname(__DIR__) . '/includes/alerts.php';
 </section>
 <script>
 (function () {
-  var cmsBaseUrl = <?= json_encode(BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
+  // Same base the server used to render the initial <img src> via
+  // app_asset_preview_url() (cms_public_base_prefix() when available) —
+  // must match exactly, otherwise this script overwrites a correct
+  // server-rendered preview with a stale BASE_URL-based one that 404s
+  // under the split-subdomain topology (wpm.sagacrypto.com admin vs
+  // sagacrypto.com frontend), which is what silently hid the logo/favicon
+  // preview in production while local dev (single-domain) looked fine.
+  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
   function previewUrl(path) {
     path = (path || '').trim();
     if (!path) return '';

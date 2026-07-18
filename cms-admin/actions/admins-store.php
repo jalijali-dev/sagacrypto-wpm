@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Same tier as pages/admins.php — creating accounts is superadmin-only.
+cms_require_role(['superadmin']);
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/admins.php', true, 302);
     exit;
@@ -17,6 +20,15 @@ $isActive = (int) ($_POST['is_active'] ?? 1);
 
 if ($name === '' || $email === '' || $password === '' || $role === '') {
     $_SESSION['cms_flash'] = ['type' => 'error', 'message' => 'Name, email, password, and role are required.'];
+    header('Location: ../pages/admins.php', true, 302);
+    exit;
+}
+
+// Defense in depth — must match the `admins.role` DB enum exactly, even if
+// the request didn't come through the admins.php <select> (e.g. a replayed
+// or hand-crafted POST).
+if (!in_array($role, ['superadmin', 'admin', 'editor'], true)) {
+    $_SESSION['cms_flash'] = ['type' => 'error', 'message' => 'Invalid role.'];
     header('Location: ../pages/admins.php', true, 302);
     exit;
 }

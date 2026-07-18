@@ -6,8 +6,13 @@ require_once dirname(__DIR__) . '/config/database.php';
 
 /**
  * Global admin search — AJAX endpoint for the navbar search box.
- * Searches across Products, Pages & Articles, Gallery, Testimonials, and
- * Contact Messages, and returns a small grouped result set as JSON.
+ * Searches across Pages & Articles and Contact Messages, and returns a
+ * small grouped result set as JSON.
+ *
+ * Testimonials intentionally excluded (13 Jul 2026) — its sidebar menu
+ * was removed as not relevant to a news site, so it shouldn't resurface
+ * via search either. The testimonials.php page and its data are untouched
+ * (still directly reachable by URL) in case it's wanted again later.
  *
  * GET /cms-admin/actions/search.php?q=term
  */
@@ -42,19 +47,6 @@ $runSearch = static function (PDO $pdo, string $sql, array $params, callable $ma
     }
 };
 
-// ── Products ────────────────────────────────────────────────────────────
-$runSearch(
-    $pdo,
-    'SELECT id, name, slug FROM products WHERE name LIKE :q1 OR slug LIKE :q2 ORDER BY name LIMIT 5',
-    ['q1' => $like, 'q2' => $like],
-    static fn (array $row): array => [
-        'type'     => 'Products',
-        'title'    => (string) $row['name'],
-        'subtitle' => '/' . $row['slug'],
-        'url'      => 'products.php?edit=' . (int) $row['id'],
-    ]
-);
-
 // ── Pages & Articles ────────────────────────────────────────────────────
 $runSearch(
     $pdo,
@@ -65,32 +57,6 @@ $runSearch(
         'title'    => (string) $row['title'],
         'subtitle' => '/' . $row['slug'],
         'url'      => 'pages.php?edit=' . (int) $row['page_id'],
-    ]
-);
-
-// ── Gallery ──────────────────────────────────────────────────────────────
-$runSearch(
-    $pdo,
-    'SELECT id, title FROM gallery WHERE title LIKE :q1 ORDER BY title LIMIT 5',
-    ['q1' => $like],
-    static fn (array $row): array => [
-        'type'     => 'Gallery',
-        'title'    => (string) $row['title'],
-        'subtitle' => 'Gallery item',
-        'url'      => 'gallery.php?edit=' . (int) $row['id'],
-    ]
-);
-
-// ── Testimonials ─────────────────────────────────────────────────────────
-$runSearch(
-    $pdo,
-    'SELECT id, client_name, content FROM testimonials WHERE client_name LIKE :q1 OR content LIKE :q2 ORDER BY client_name LIMIT 5',
-    ['q1' => $like, 'q2' => $like],
-    static fn (array $row): array => [
-        'type'     => 'Testimonials',
-        'title'    => (string) $row['client_name'],
-        'subtitle' => mb_strimwidth((string) $row['content'], 0, 60, '…'),
-        'url'      => 'testimonials.php?edit=' . (int) $row['id'],
     ]
 );
 

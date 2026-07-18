@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Same tier as pages/admins.php — editing accounts/roles is superadmin-only.
+cms_require_role(['superadmin']);
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/admins.php', true, 302);
     exit;
@@ -20,6 +23,12 @@ $redirectEdit = '../pages/admins.php' . ($adminId > 0 ? '?edit=' . $adminId : ''
 
 if ($adminId <= 0 || $name === '' || $email === '' || $role === '') {
     $_SESSION['cms_flash'] = ['type' => 'error', 'message' => 'Name, email, and role are required.'];
+    header('Location: ' . $redirectEdit, true, 302);
+    exit;
+}
+
+if (!in_array($role, ['superadmin', 'admin', 'editor'], true)) {
+    $_SESSION['cms_flash'] = ['type' => 'error', 'message' => 'Invalid role.'];
     header('Location: ' . $redirectEdit, true, 302);
     exit;
 }

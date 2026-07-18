@@ -314,3 +314,147 @@ function cms_ai_call_provider(
         ? cms_ai_call_openai($apiKey, $model, $userPrompt, $systemPrompt, $maxTokens, $temperature)
         : cms_ai_call_anthropic($apiKey, $model, $userPrompt, $systemPrompt, $maxTokens, $temperature);
 }
+
+/**
+ * ── AI content-generation endpoints: agent resolution ────────────────────
+ *
+ * Resolves everything an api/*-generate.php endpoint needs to make a call:
+ * the configured model + provider for an `ai_agent_settings.agent_key` row,
+ * an active decrypted API key for that provider, and a system prompt
+ * (agent's own `system_prompt` column, or — if left blank — the optional
+ * Prompt Control merged layers, or finally the caller's own hardcoded
+ * default so generation never hard-fails just because nothing has been
+ * configured in the admin UI yet).
+ *
+ * @return array{
+ *   ok: bool, error: string, provider: string, api_key: string,
+ *   model: string, temperature: float, max_tokens: int, system_prompt: string
+ * }
+ */
+function cms_ai_resolve_agent(PDO $pdo, string $agentKey, string $fallbackSystemPrompt = ''): array
+{
+    $fail = static fn (string $msg): array => [
+        'ok' => false, 'error' => $msg, 'provider' => '', 'api_key' => '',
+        'model' => '', 'temperature' => 0.7, 'max_tokens' => 512, 'system_prompt' => '',
+    ];
+
+    $agentStmt = $pdo->prepare(
+        'SELECT model_id, temperature, max_tokens, system_prompt
+         FROM ai_agent_settings WHERE agent_key = :agent_key AND is_active = 1 LIMIT 1'
+    );
+    $agentStmt->execute(['agent_key' => $agentKey]);
+    $agent = $agentStmt->fetch();
+
+    if (!$agent || empty($agent['model_id'])) {
+        return $fail('AI agent "' . $agentKey . '" belum dikonfigurasi. Buka AI Agent Settings di admin panel dan pilih model untuk agent ini.');
+    }
+
+    $modelStmt = $pdo->prepare(
+        'SELECT provider, model_key FROM ai_models WHERE id = :id AND is_active = 1 LIMIT 1'
+    );
+    $modelStmt->execute(['id' => (int) $agent['model_id']]);
+    $model = $modelStmt->fetch();
+
+    if (!$model) {
+        return $fail('Model AI untuk agent ini tidak aktif atau sudah dihapus. Cek di AI Agent Settings.');
+    }
+
+    $credStmt = $pdo->prepare(
+        'SELECT api_key_enc FROM ai_credentials WHERE provider = :provider AND is_active = 1 ORDER BY id ASC LIMIT 1'
+    );
+    $credStmt->execute(['provider' => $model['provider']]);
+    $cred = $credStmt->fetch();
+
+    if (!$cred) {
+        return $fail('Belum ada API key aktif untuk provider ' . $model['provider'] . '. Tambahkan di AI Credentials.');
+    }
+
+    $apiKey = cms_ai_decrypt((string) $cred['api_key_enc']);
+    if ($apiKey === '') {
+        return $fail('Gagal membaca API key untuk provider ' . $model['provider'] . '.');
+    }
+
+    $systemPrompt = trim((string) ($agent['system_prompt'] ?? ''));
+
+    // Optional Prompt Control layering (services/PromptLoader.php). Skipped
+    // silently — never a hard error — if the service class isn't reachable,
+    // so content generation always still works off the agent's own
+    // system_prompt column or the caller's hardcoded default.
+    if ($systemPrompt === '') {
+        $promptLoaderPath = dirname(__DIR__, 2) . '/services/PromptLoader.php';
+        if (is_file($promptLoaderPath)) {
+            try {
+                require_once $promptLoaderPath;
+                if (class_exists('PromptLoader')) {
+                    $loader = new PromptLoader($pdo);
+                    $merged = trim($loader->buildMergedPrompt($agentKey));
+                    if ($merged !== '') {
+                        $systemPrompt = $merged;
+                    }
+                }
+            } catch (Throwable $e) {
+                // Ignore — fall through to the caller's own default prompt.
+            }
+        }
+    }
+
+    if ($systemPrompt === '') {
+        $systemPrompt = $fallbackSystemPrompt;
+    }
+
+    return [
+        'ok' => true,
+        'error' => '',
+        'provider' => (string) $model['provider'],
+        'api_key' => $apiKey,
+        'model' => (string) $model['model_key'],
+        'temperature' => (float) $agent['temperature'],
+        'max_tokens' => (int) $agent['max_tokens'],
+        'system_prompt' => $systemPrompt,
+    ];
+}
+
+/**
+ * Best-effort JSON parsing of an AI text response. Handles the common
+ * cases where a model wraps its answer in a ```json ... ``` fence, or adds
+ * a short sentence of prose before/after the JSON object despite being
+ * told not to. Returns null if nothing decodable is found.
+ *
+ * @return array<string, mixed>|null
+ */
+function cms_ai_extract_json(string $text): ?array
+{
+    $text = trim($text);
+    if (str_starts_with($text, '```')) {
+        $text = preg_replace('/^```[a-zA-Z]*\s*/', '', $text) ?? $text;
+        $text = preg_replace('/```\s*$/', '', trim($text)) ?? $text;
+        $text = trim($text);
+    }
+
+    $decoded = json_decode($text, true);
+    if (is_array($decoded)) {
+        return $decoded;
+    }
+
+    // Fallback: slice out the outermost {...} or [...] and try again, in
+    // case the model added stray prose around the JSON.
+    $start = null;
+    foreach (['{', '['] as $opener) {
+        $pos = strpos($text, $opener);
+        if ($pos !== false && ($start === null || $pos < $start)) {
+            $start = $pos;
+        }
+    }
+    if ($start === null) {
+        return null;
+    }
+    $closer = $text[$start] === '{' ? '}' : ']';
+    $end = strrpos($text, $closer);
+    if ($end === false || $end <= $start) {
+        return null;
+    }
+
+    $decoded = json_decode(substr($text, $start, $end - $start + 1), true);
+
+    return is_array($decoded) ? $decoded : null;
+}

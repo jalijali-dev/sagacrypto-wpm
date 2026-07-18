@@ -250,9 +250,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     <input type="text" name="button_url" value="<?= cms_esc($editRow ? $val($editRow, 'button_url') : '') ?>" placeholder="https://">
                 </label>
                 <div class="cms-schedule<?= $isAlwaysOnChecked ? ' is-disabled' : '' ?>" data-schedule>
-                    <label class="field">
+                    <label class="field field--checkbox">
                         <input type="checkbox" name="is_always_on" value="1"<?= $isAlwaysOnChecked ? ' checked' : '' ?> data-always-on>
-                        Always on
+                        <span class="field--checkbox__text">
+                            <span class="field--checkbox__title">Always on</span>
+                            <span class="field--checkbox__desc">Banner tampil terus tanpa jadwal — kosongkan Start/End date di bawah.</span>
+                        </span>
                     </label>
                     <label class="field">Start date
                         <input type="datetime-local" name="start_date" value="<?= cms_esc($startDateValue) ?>"<?= $isAlwaysOnChecked ? ' disabled' : '' ?> data-start-date>
@@ -296,7 +299,12 @@ require dirname(__DIR__) . '/includes/alerts.php';
 </section>
 <script>
 (function () {
-  var cmsBaseUrl = <?= json_encode(BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
+  // Must match the base app_asset_preview_url() used server-side for the
+  // initial <img src> (cms_public_base_prefix() when available) — otherwise
+  // this script clobbers a correct preview with a stale BASE_URL-based one
+  // that 404s under the split-subdomain topology (wpm.sagacrypto.com admin
+  // vs sagacrypto.com frontend).
+  var cmsBaseUrl = <?= json_encode(function_exists('cms_public_base_prefix') ? cms_public_base_prefix() : BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
   function previewUrl(path) {
     path = (path || '').trim();
     if (!path) return '';

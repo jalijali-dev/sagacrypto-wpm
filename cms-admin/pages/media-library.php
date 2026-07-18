@@ -15,9 +15,7 @@ $breadcrumbs = [
 $selfUrl = 'media-library.php';
 
 /**
- * Auto-migration: same self-healing as cms-admin/pages/gallery.php, kept
- * here too so this page also works correctly when opened directly
- * (without visiting Gallery first). Safe to run on every load.
+ * Auto-migration: idempotent column self-heal, safe to run on every load.
  */
 $mediaSchemaError = null;
 try {
@@ -25,7 +23,6 @@ try {
     cms_ensure_column($pdo, 'media_library', 'file_size_kb', 'INT(10) UNSIGNED DEFAULT NULL AFTER `mime_type`');
     cms_ensure_column($pdo, 'media_library', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `file_size_kb`');
     cms_ensure_column($pdo, 'media_library', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`');
-    cms_ensure_column($pdo, 'gallery', 'media_id', 'INT(10) UNSIGNED DEFAULT NULL AFTER `id`');
 } catch (Throwable $e) {
     $mediaSchemaError = $e->getMessage();
 }
@@ -60,11 +57,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $deleteId = (int) ($_POST['id'] ?? 0);
         if ($deleteId <= 0) {
             $ml_redirect('Invalid media file.', 'error');
-        }
-        $useCount = $pdo->prepare('SELECT COUNT(*) FROM gallery WHERE media_id = :id');
-        $useCount->execute(['id' => $deleteId]);
-        if ((int) $useCount->fetchColumn() > 0) {
-            $ml_redirect('Cannot delete: file is used in gallery items.', 'error');
         }
         $delete = $pdo->prepare('DELETE FROM media_library WHERE id = :id');
         $delete->execute(['id' => $deleteId]);
@@ -315,13 +307,8 @@ $editRow = null;
 try {
     $listStmt = $pdo->query(
         'SELECT m.id, m.file_name, m.file_path, m.file_type, m.mime_type,
-                m.file_size_kb, m.is_active, m.created_at,
-                COUNT(g.id)                                              AS gallery_usage_count,
-                GROUP_CONCAT(g.title ORDER BY g.id ASC SEPARATOR \', \') AS gallery_titles,
-                MIN(g.id)                                                AS first_gallery_id
+                m.file_size_kb, m.is_active, m.created_at
          FROM media_library m
-         LEFT JOIN gallery g ON g.media_id = m.id
-         GROUP BY m.id
          ORDER BY m.id DESC'
     );
     $mediaFiles = $listStmt->fetchAll();
@@ -448,18 +435,17 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <th>File</th>
                             <th>Type</th>
                             <th>Size</th>
-                            <th>Gallery</th>
                             <th>Status</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody id="ml-tbody">
                         <?php if ($mediaFiles === []) : ?>
-                            <tr><td colspan="6" class="muted">No media files yet.</td></tr>
+                            <tr><td colspan="5" class="muted">No media files yet.</td></tr>
                         <?php endif; ?>
                         <?php if ($mediaFiles !== []) : ?>
                             <tr id="ml-no-results" hidden>
-                                <td colspan="6" class="muted">No files match your search.</td>
+                                <td colspan="5" class="muted">No files match your search.</td>
                             </tr>
                         <?php endif; ?>
                         <?php foreach ($mediaFiles as $row) : ?>
@@ -472,9 +458,6 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             $thumbSrc  = ($isImg && $rowFPath !== '') ? app_asset_preview_url($rowFPath) : '';
                             $rowStatus = (int) ($row['is_active'] ?? 0) === 1 ? 'active' : 'inactive';
                             $badgeKey  = in_array($rowType, ['image', 'document', 'video'], true) ? $rowType : 'other';
-                            $mlUsage   = (int) ($row['gallery_usage_count'] ?? 0);
-                            $mlTitles  = trim((string) ($row['gallery_titles']  ?? ''));
-                            $mlFirstGid = (int) ($row['first_gallery_id'] ?? 0);
                             ?>
                             <tr data-name="<?= cms_esc(strtolower($val($row, 'file_name'))) ?>"
                                 data-path="<?= cms_esc(strtolower($rowFPath)) ?>"
@@ -503,19 +486,6 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                     </span>
                                 </td>
                                 <td><?= $row['file_size_kb'] !== null && $row['file_size_kb'] !== '' ? cms_esc((string) $row['file_size_kb']) . ' KB' : '—' ?></td>
-                                <td>
-                                    <?php if ($mlUsage > 0) : ?>
-                                        <span class="pill pill--ok" title="<?= cms_esc($mlTitles) ?>">
-                                            <?= $mlUsage ?> item<?= $mlUsage !== 1 ? 's' : '' ?>
-                                        </span>
-                                        <?php if ($mlFirstGid > 0) : ?>
-                                            <a class="admin-btn admin-btn--sm admin-btn--secondary"
-                                               href="gallery.php?edit=<?= $mlFirstGid ?>">Edit</a>
-                                        <?php endif; ?>
-                                    <?php else : ?>
-                                        <span class="muted">—</span>
-                                    <?php endif; ?>
-                                </td>
                                 <td>
                                     <span class="pill pill--<?= $rowStatus === 'active' ? 'ok' : 'muted' ?>">
                                         <?= $rowStatus === 'active' ? 'Active' : 'Inactive' ?>
@@ -617,7 +587,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                            name="mime_type"
                            value="<?= cms_esc($editRow ? $val($editRow, 'mime_type') : '') ?>"
                            placeholder="e.g. image/jpeg">
-                    <small class="ml-hint">Optional. Helps the gallery picker recognise image files. Examples: <code>image/jpeg</code>, <code>image/webp</code>, <code>application/pdf</code></small>
+                    <small class="ml-hint">Optional. Helps the media picker recognise image files. Examples: <code>image/jpeg</code>, <code>image/webp</code>, <code>application/pdf</code></small>
                 </label>
 
                 <label class="field">File size (KB)

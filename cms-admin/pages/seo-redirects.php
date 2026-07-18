@@ -3,6 +3,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/schema-guard.php';
+require_once dirname(__DIR__) . '/includes/sitemap-service.php';
+
+// Site-wide configuration is admin-tier — see cms_require_role() in
+// functions.php for the full tier breakdown.
+cms_require_role(['superadmin', 'admin']);
+
+cms_sitemap_ensure_schema($pdo);
 
 $pageTitle = 'SEO Redirects';
 $currentNav = 'seo-redirects';
@@ -72,6 +80,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         );
         $insert->execute($payload);
         $newId = (int) $pdo->lastInsertId();
+        cms_sitemap_on_redirect_save($pdo, $oldUrl, $newUrl, true);
         $sr_redirect('Redirect created successfully.', 'success', 'edit=' . $newId);
     }
 
@@ -87,6 +96,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
              WHERE id = :id'
         );
         $update->execute($payload + ['id' => $updateId]);
+        cms_sitemap_on_redirect_save($pdo, $oldUrl, $newUrl, false);
         $sr_redirect('Redirect updated successfully.', 'success', 'edit=' . $updateId);
     }
 

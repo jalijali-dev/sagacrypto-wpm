@@ -14,7 +14,6 @@ declare(strict_types=1);
 // ─── CMS identity ─────────────────────────────────────────────────────────────
 define('CMS_ADMIN_NAME',    'WPM');
 define('CMS_ADMIN_TAGLINE', 'Admin panel');
-define('CMS_DEMO_NOTICE',   'Authorized administrators only.');
 
 // ─── Project root filesystem path ─────────────────────────────────────────────
 // cms-admin/config/ → dirname(__DIR__)   = cms-admin/
@@ -62,6 +61,18 @@ if (!function_exists('app_asset_preview_url')) {
         if (preg_match('#^https?://#i', $path)) {
             return $path;
         }
+        // Uploaded files only physically live on the public front-end server
+        // — on a split deployment (wpm.<domain> serving cms-admin/ as its own
+        // document root, e.g. production) BASE_URL points at the ADMIN
+        // subdomain itself, which never has the actual /uploads/ files. Route
+        // through cms_public_base_prefix() instead: it already knows to
+        // build an absolute https://<domain>/ URL back to the front-end when
+        // running on a wpm. subdomain, or a relative "../" when cms-admin is
+        // nested locally under the same host (local dev). Falls back to
+        // BASE_URL only if functions.php somehow isn't loaded yet.
+        if (function_exists('cms_public_base_prefix')) {
+            return cms_public_base_prefix() . ltrim($path, '/');
+        }
         return BASE_URL . ltrim($path, '/');
     }
 }
@@ -96,5 +107,38 @@ if (!function_exists('app_safe_media_disk_path')) {
             return null;
         }
         return $diskPath;
+    }
+}
+
+// ─── Safe local media path (string-level check, no disk lookup) ───────────────
+if (!function_exists('app_is_safe_local_media_path')) {
+    /**
+     * Validate a manually-typed local media path (H-3 fix in
+     * cms-admin/pages/media-library.php — admins can type a file_path
+     * directly instead of uploading a file, so that value needs the same
+     * traversal guard as uploaded paths).
+     *
+     * Unlike app_safe_media_disk_path(), this is a pure string check: it
+     * does not require the file to exist on disk (the path may point to an
+     * asset that lives elsewhere on the same server, or hasn't been synced
+     * to this environment yet). It only guards against path traversal and
+     * enforces that local paths stay under /uploads/.
+     *
+     * Valid: normalizes to a path starting with /uploads/ and contains no
+     * ".." traversal segment anywhere (before or after normalizing
+     * backslashes, so Windows-style traversal can't hide either).
+     */
+    function app_is_safe_local_media_path(string $path): bool
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return false;
+        }
+        $normalized = str_replace('\\', '/', $path);
+        if (str_contains($normalized, '..')) {
+            return false;
+        }
+        $normalized = '/' . ltrim($normalized, '/');
+        return str_starts_with($normalized, '/uploads/');
     }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
+// Same tier as pages/admins.php — deleting accounts is superadmin-only.
+cms_require_role(['superadmin']);
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Location: ../pages/admins.php', true, 302);
     exit;

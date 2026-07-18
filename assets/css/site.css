@@ -123,6 +123,15 @@ body.crypto-theme {
   flex-shrink: 0;
 }
 
+/* Admin-uploaded logo image (Site Settings) replaces the SC+gem fallback
+   mark above — same box size/shape, but an actual <img> instead of text. */
+.crypto-logo__mark--img {
+  object-fit: contain;
+  background: var(--surface-glass);
+  padding: 4px;
+}
+
+
 .crypto-logo__text {
   font-size: 20px;
   font-weight: 700;
@@ -208,6 +217,22 @@ body.crypto-theme {
 }
 
 .crypto-btn--ghost:hover { border-color: var(--border-glow); background: rgba(139, 92, 246, 0.10); }
+
+/* App Promotion section — Google Play / App Store "coming soon" badges */
+.app-store-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-store-badge__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.app-store-badge__icon svg { width: 100%; height: 100%; }
 
 .crypto-nav__toggle {
   display: none;
@@ -748,6 +773,8 @@ body.crypto-theme {
 
 .contact-info-row__label { font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 .contact-info-row__value { font-size: 14.5px; color: var(--text); font-weight: 500; margin-top: 2px; }
+a.contact-info-row__value { display: inline-block; text-decoration: none; transition: color 0.16s ease; }
+a.contact-info-row__value:hover { color: var(--cyan); }
 
 .contact-form-card { padding: 32px; border-radius: var(--radius-lg); }
 
@@ -870,6 +897,671 @@ body.crypto-theme {
   .crypto-hero__visual { display: none; }
   .footer-bottom { flex-direction: column; align-items: flex-start; }
 }
+
+/* ============================================================
+   NAV SEARCH BUTTON
+   ============================================================ */
+.crypto-nav__search-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+.crypto-nav__search-btn svg { width: 17px; height: 17px; }
+.crypto-nav__search-btn:hover { color: var(--cyan); border-color: var(--border-glow); background: rgba(139, 92, 246, 0.10); }
+
+/* ============================================================
+   SITE TICKER ROW — single merged bar holding the Live Ticker
+   (left, fixed width) and Breaking News ticker (right, flexible),
+   side by side instead of two stacked full-width bars.
+   ============================================================ */
+.site-ticker-row {
+  position: relative;
+  z-index: 1;
+  background: rgba(139, 92, 246, 0.07);
+  border-bottom: 1px solid var(--border-glass);
+  overflow: hidden;
+}
+.site-ticker-row__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.site-ticker-row__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 10px 18px;
+  background: var(--border-glass);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   BREAKING NEWS TICKER (right-hand segment of .site-ticker-row)
+   ============================================================ */
+.breaking-ticker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+.breaking-ticker__label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+.breaking-ticker__label .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+  animation: tickerPulse 1.6s ease-in-out infinite;
+}
+@keyframes tickerPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.breaking-ticker__track {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.breaking-ticker__scroll {
+  display: inline-flex;
+  gap: 40px;
+  padding: 10px 0;
+  animation: tickerScroll 32s linear infinite;
+}
+.breaking-ticker__scroll a { font-size: 13.5px; color: var(--text-muted); transition: color 0.16s ease; }
+.breaking-ticker__scroll a:hover { color: #fff; }
+@keyframes tickerScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) { .breaking-ticker__scroll { animation: none; } }
+
+/* ============================================================
+   LIVE TICKER (Binance WebSocket — assets/js/live-ticker.js)
+   Left-hand segment of .site-ticker-row.
+   ============================================================ */
+.live-ticker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  max-width: 52%;
+  overflow: hidden;
+}
+
+.live-ticker__label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.live-ticker__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.live-ticker.is-connected .live-ticker__dot,
+#wpm-live-ticker.is-connected .live-ticker__dot {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: tickerPulse 1.6s ease-in-out infinite;
+}
+
+.live-ticker__track {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.live-ticker__scroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  animation: tickerScroll 20s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .live-ticker__scroll { animation: none; } }
+
+.live-ticker__chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface-glass);
+  border: 1px solid var(--border-glass);
+  font-size: 12.5px;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.live-ticker__chip.is-loading { opacity: 0.55; }
+
+.live-ticker__symbol { font-weight: 700; color: var(--text); }
+.live-ticker__price { font-family: var(--font-display); color: var(--text-muted); }
+.live-ticker__change { font-weight: 600; }
+.live-ticker__change.up { color: var(--green); }
+.live-ticker__change.down { color: var(--red); }
+
+.live-ticker__chip.is-flash-up { background: rgba(16, 185, 129, 0.18); border-color: rgba(16, 185, 129, 0.4); }
+.live-ticker__chip.is-flash-down { background: rgba(244, 63, 94, 0.18); border-color: rgba(244, 63, 94, 0.4); }
+
+/* ============================================================
+   AD SLOTS
+   ============================================================ */
+.ad-slot-wrap { position: relative; z-index: 1; padding: 18px 0; }
+.ad-slot-wrap .crypto-container { display: flex; justify-content: center; }
+
+.ad-slot {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+}
+.ad-slot img, .ad-slot video { display: block; max-width: 100%; height: auto; }
+.ad-slot__label {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(5, 3, 16, 0.65); color: var(--text-faint);
+}
+.ad-slot__cta-badge {
+  position: absolute; bottom: 10px; right: 10px; z-index: 2;
+  font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 999px;
+  background: var(--grad-brand); color: #fff;
+}
+.ad-slot--html { padding: 12px; text-align: center; }
+.ad-slot--video { text-align: center; }
+.ad-slot--video video { width: 100%; }
+.ad-slot--external { padding: 12px; text-align: center; }
+.ad-slot__cta {
+  display: inline-block; margin-top: 10px; padding: 9px 18px; border-radius: 999px;
+  background: var(--grad-brand); color: #fff; font-size: 13px; font-weight: 600;
+}
+
+/* ------------------------------------------------------------
+   Text Ad (ad_type='text') — styled like a standard search-result
+   text ad ("Ad · domain / Headline / Description / CTA"), but kept
+   visually close to the site's dark glass theme rather than an exact
+   Google-ads clone. Whole block is a single <a> (see wpm_text_ad_markup())
+   so it needs its own layout, distinct from the image/video .ad-slot
+   rules above.
+   ------------------------------------------------------------ */
+.ad-slot--text {
+  padding: 14px 16px;
+  text-decoration: none;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+.ad-slot--text:hover {
+  border-color: var(--border-glow);
+  background: var(--surface-glass-strong);
+  transform: translateY(-1px);
+}
+.ad-slot--text:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+.text-ad { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.text-ad__meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--text-faint);
+}
+.text-ad__badge {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--cyan);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.text-ad__dot { opacity: 0.5; }
+.text-ad__domain { color: var(--text-faint); overflow-wrap: anywhere; }
+.text-ad__headline {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.text-ad__desc {
+  font-size: 13.5px; color: var(--text-muted); line-height: 1.5;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.text-ad__cta {
+  margin-top: 2px; align-self: flex-start;
+  font-size: 12.5px; font-weight: 700; color: var(--purple-2);
+}
+
+/* Position-aware layout variants (section 4 of the brief) — same markup,
+   different arrangement/emphasis depending on where the slot is placed. */
+.ad-slot--pos-header, .ad-slot--pos-below-main-menu, .ad-slot--pos-footer {
+  max-width: 100%;
+}
+.ad-slot--pos-header .text-ad, .ad-slot--pos-below-main-menu .text-ad, .ad-slot--pos-footer .text-ad {
+  flex-direction: row; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.ad-slot--pos-header .text-ad__desc, .ad-slot--pos-below-main-menu .text-ad__desc, .ad-slot--pos-footer .text-ad__desc {
+  -webkit-line-clamp: 1;
+}
+
+.ad-slot--pos-sidebar-left, .ad-slot--pos-sidebar-right {
+  width: 100%;
+}
+.ad-slot--pos-sidebar-left .text-ad__desc, .ad-slot--pos-sidebar-right .text-ad__desc {
+  -webkit-line-clamp: 3;
+}
+
+.ad-slot--pos-article-before-title, .ad-slot--pos-article-after-title {
+  margin: 14px 0;
+}
+
+.ad-slot--pos-popup .text-ad__headline { font-size: 18px; }
+
+.ad-slot--pos-sticky-bottom-mobile .text-ad {
+  flex-direction: row; align-items: center; gap: 10px;
+}
+.ad-slot--pos-sticky-bottom-mobile .text-ad__desc { display: none; }
+
+/* ============================================================
+   PROMO BANNERS (cms-admin/pages/banners.php, placement="home")
+   ============================================================ */
+.banner-strip__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.banner-card {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+  aspect-ratio: 1920 / 900;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.banner-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-glow-purple);
+}
+.banner-card picture,
+.banner-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.banner-card__overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 20px;
+  background: linear-gradient(0deg, rgba(5, 3, 16, 0.88) 0%, rgba(5, 3, 16, 0.35) 60%, transparent 100%);
+}
+.banner-card__title {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+.banner-card__subtitle {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+.banner-card__cta {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--grad-brand);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .banner-card { aspect-ratio: 900 / 1200; }
+}
+
+.wpm-popup-ad {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(5, 3, 16, 0.75); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.wpm-popup-ad.is-hidden { display: none; }
+.wpm-popup-ad__panel { position: relative; max-width: 420px; width: 100%; }
+.wpm-popup-ad__close {
+  position: absolute; top: -14px; right: -14px; z-index: 3;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--bg-deep); border: 1px solid var(--border-glass); color: var(--text);
+  cursor: pointer; font-size: 17px;
+}
+
+.wpm-sticky-ad {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 250;
+  background: var(--bg-deep); border-top: 1px solid var(--border-glass);
+  padding: 8px 40px 8px 12px; display: none;
+}
+.wpm-sticky-ad.is-hidden { display: none !important; }
+.wpm-sticky-ad__close {
+  position: absolute; top: 6px; right: 8px; z-index: 3;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-glass); color: var(--text);
+  cursor: pointer; font-size: 14px;
+}
+@media (max-width: 640px) { .wpm-sticky-ad { display: block; } }
+
+/* ============================================================
+   ARTICLE CARD (grid tile used across homepage / category / related)
+   ============================================================ */
+.news-card {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.news-card__media {
+  height: 170px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(34, 211, 238, 0.20));
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.news-card__media img { width: 100%; height: 100%; object-fit: cover; }
+.news-card__media svg { width: 34px; height: 34px; color: rgba(255,255,255,0.85); }
+.news-card__body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
+.news-card h3 { font-family: var(--font-display); font-size: 16px; line-height: 1.35; margin: 0 0 10px; }
+.news-card h3 a { transition: color 0.16s ease; }
+.news-card h3 a:hover { color: var(--cyan); }
+.news-card p { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 14px; flex: 1; }
+.news-card__meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-faint); margin-top: auto; }
+.news-card__meta svg { width: 13px; height: 13px; }
+.news-card__meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+.news-card--row { flex-direction: row; }
+.news-card--row .news-card__media { height: auto; width: 130px; flex-shrink: 0; }
+.news-card--row .news-card__body { padding: 14px 18px; }
+.news-card--row h3 { font-size: 14.5px; margin-bottom: 6px; }
+
+/* ============================================================
+   PAGE HEADER (used by kategori/crypto/pencarian)
+   ============================================================ */
+.page-hero {
+  padding: 56px 0 36px;
+  position: relative;
+  z-index: 1;
+}
+.page-hero .section-kicker { margin-bottom: 14px; }
+.page-hero h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 700; margin: 0 0 10px; }
+.page-hero p { font-size: 15.5px; color: var(--text-muted); max-width: 620px; margin: 0; }
+
+.breadcrumb {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--text-faint); margin-bottom: 18px;
+}
+.breadcrumb a { color: var(--text-muted); }
+.breadcrumb a:hover { color: var(--cyan); }
+
+/* ============================================================
+   PAGINATION
+   ============================================================ */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 44px; flex-wrap: wrap; }
+.pagination a, .pagination span {
+  min-width: 40px; height: 40px; padding: 0 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 13.5px; font-weight: 600;
+  border: 1px solid var(--border-glass); color: var(--text-muted);
+}
+.pagination a:hover { border-color: var(--border-glow); color: #fff; }
+.pagination .is-current { background: var(--grad-brand); color: #fff; border-color: transparent; }
+.pagination .is-disabled { opacity: 0.35; pointer-events: none; }
+
+/* ============================================================
+   ARTICLE DETAIL PAGE
+   ============================================================ */
+.article-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 200px;
+  gap: 28px;
+  align-items: start;
+}
+.article-layout__sidebar { position: sticky; top: 90px; display: flex; flex-direction: column; gap: 16px; }
+.article-layout__main { min-width: 0; }
+
+.article-head { margin-bottom: 24px; }
+.article-head__category {
+  display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--cyan); background: rgba(34, 211, 238, 0.10); border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 5px 12px; border-radius: 999px; margin-bottom: 16px;
+}
+.article-head h1 { font-family: var(--font-display); font-size: clamp(26px, 4vw, 40px); line-height: 1.2; font-weight: 700; margin: 0 0 18px; }
+.article-head__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 13px; color: var(--text-faint); }
+.article-head__meta span { display: inline-flex; align-items: center; gap: 6px; }
+.article-head__meta svg { width: 14px; height: 14px; }
+
+.article-cover { border-radius: var(--radius-md); overflow: hidden; margin-bottom: 28px; border: 1px solid var(--border-glass); }
+.article-cover img { width: 100%; display: block; }
+
+.article-prose { font-size: 16px; line-height: 1.85; color: rgba(245, 243, 255, 0.88); }
+.article-prose p { margin: 0 0 20px; }
+.article-prose h2, .article-prose h3 { font-family: var(--font-display); color: var(--text); margin: 32px 0 14px; }
+.article-prose img { border-radius: var(--radius-md); margin: 20px 0; }
+.article-prose a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.article-prose ul, .article-prose ol { margin: 0 0 20px; padding-left: 22px; }
+.article-prose blockquote {
+  margin: 24px 0; padding: 16px 22px; border-left: 3px solid var(--purple);
+  background: var(--surface-glass); border-radius: 0 12px 12px 0; color: var(--text-muted);
+}
+
+.article-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 32px 0; }
+.article-tags a {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600;
+  padding: 7px 13px; border-radius: 999px; background: var(--surface-glass); border: 1px solid var(--border-glass); color: var(--text-muted);
+}
+.article-tags a:hover { color: var(--cyan); border-color: var(--border-glow); }
+.article-tags svg { width: 12px; height: 12px; }
+
+.article-share { display: flex; align-items: center; gap: 10px; margin: 32px 0; padding: 18px 0; border-top: 1px solid var(--border-glass); border-bottom: 1px solid var(--border-glass); }
+.article-share__label { font-size: 13px; font-weight: 600; color: var(--text-faint); margin-right: 4px; }
+.article-share a, .article-share button {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-glass); border: 1px solid var(--border-glass); color: var(--text-muted); cursor: pointer;
+}
+.article-share a:hover, .article-share button:hover { color: var(--cyan); border-color: var(--border-glow); }
+.article-share svg { width: 16px; height: 16px; }
+
+.article-faq { margin: 32px 0; }
+.article-faq h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 20px; }
+.article-faq__item {
+  border: 1px solid var(--border-glass); border-radius: var(--radius-md); margin-bottom: 10px;
+  overflow: hidden; background: var(--surface-glass);
+}
+.article-faq__item summary {
+  cursor: pointer; padding: 16px 18px; font-weight: 600; color: var(--text); list-style: none;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.article-faq__item summary::-webkit-details-marker { display: none; }
+.article-faq__item summary::after { content: '+'; color: var(--cyan); font-size: 20px; line-height: 1; flex-shrink: 0; }
+.article-faq__item[open] summary::after { content: '\2212'; }
+.article-faq__answer { padding: 0 18px 16px; color: var(--text-muted); line-height: 1.7; font-size: 14.5px; }
+
+.related-articles { margin-top: 48px; }
+.related-articles h2 { font-family: var(--font-display); font-size: 22px; margin: 0 0 20px; }
+
+/* ============================================================
+   CRYPTO PAGE
+   ============================================================ */
+.crypto-table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--border-glass); }
+.crypto-table { width: 100%; border-collapse: collapse; min-width: 620px; }
+.crypto-table th {
+  text-align: left; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); padding: 14px 18px; border-bottom: 1px solid var(--border-glass); background: var(--surface-glass);
+}
+.crypto-table td { padding: 14px 18px; border-bottom: 1px solid var(--border-glass); font-size: 14px; }
+.crypto-table tr:last-child td { border-bottom: none; }
+.crypto-table__coin { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.crypto-table__coin img { width: 26px; height: 26px; border-radius: 50%; }
+.crypto-table__symbol { color: var(--text-faint); font-size: 12px; text-transform: uppercase; }
+.crypto-table__change--up { color: var(--green); font-weight: 600; }
+.crypto-table__change--down { color: var(--red); font-weight: 600; }
+
+.status-banner {
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 12px;
+  font-size: 13.5px; margin-bottom: 24px; border: 1px solid var(--border-glass); background: var(--surface-glass);
+}
+/* Was missing an explicit size — the inline wpm_icon() SVG has only a
+   viewBox (no width/height attrs), so without this rule the browser fell
+   back to its default intrinsic SVG size (~300x150px), rendering what's
+   meant to be a small status icon as a giant box filling the banner. */
+.status-banner svg { width: 18px; height: 18px; flex-shrink: 0; }
+.status-banner--ok { border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+.status-banner--warn { border-color: rgba(251, 191, 36, 0.3); color: var(--gold); }
+.status-banner--off { color: var(--text-faint); }
+
+/* ============================================================
+   CRYPTO PAGE — Top 10 Market Cap bar chart (crypto.php)
+   Data-driven (real market_cap values from the live/cached API result),
+   plain CSS bars — no charting library dependency, consistent with the
+   rest of this project.
+   ============================================================ */
+.market-chart {
+  border: 1px solid var(--border-glass);
+  background: var(--surface-glass);
+  border-radius: 16px;
+  padding: 24px 22px 18px;
+  margin-bottom: 24px;
+}
+.market-chart__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 20px;
+}
+.market-chart__head h2 { font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
+.market-chart__hint { font-size: 12px; color: var(--text-faint); }
+
+.market-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.market-chart__col {
+  flex: 1 1 0;
+  min-width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.market-chart__value {
+  font-size: 10.5px;
+  font-family: var(--font-display);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.market-chart__track {
+  width: 100%;
+  height: 150px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.market-chart__bar {
+  width: 60%;
+  min-width: 18px;
+  border-radius: 6px 6px 2px 2px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.market-chart__col:hover .market-chart__bar { opacity: 0.85; transform: scaleX(1.12); }
+.market-chart__bar.is-up { background: linear-gradient(180deg, var(--green), rgba(16, 185, 129, 0.35)); }
+.market-chart__bar.is-down { background: linear-gradient(180deg, var(--red), rgba(244, 63, 94, 0.35)); }
+.market-chart__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+@media (max-width: 640px) {
+  .market-chart__col { min-width: 44px; }
+  .market-chart__track { height: 110px; }
+}
+
+/* ============================================================
+   SEARCH PAGE
+   ============================================================ */
+.search-form { display: flex; gap: 10px; max-width: 560px; margin: 0 0 40px; }
+.search-form input {
+  flex: 1; padding: 14px 18px; border-radius: 999px; background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-glass); color: var(--text); font-size: 14.5px; outline: none;
+}
+.search-form input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(139,92,246,0.2); }
+.search-form button {
+  padding: 0 26px; border-radius: 999px; border: none; background: var(--grad-brand); color: #fff;
+  font-weight: 600; cursor: pointer;
+}
+
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-faint); }
+.empty-state svg { width: 40px; height: 40px; margin-bottom: 14px; opacity: 0.5; }
+
+/* ============================================================
+   RESPONSIVE — Fase 9 additions
+   ============================================================ */
+@media (max-width: 980px) {
+  .article-layout { grid-template-columns: 1fr; }
+  .article-layout__sidebar { position: static; flex-direction: row; overflow-x: auto; }
+  .news-card--row { flex-direction: column; }
+  .news-card--row .news-card__media { width: 100%; height: 150px; }
+}
+
+@media (max-width: 640px) {
+  .article-share { flex-wrap: wrap; }
+  .crypto-nav__search-btn { display: none; }
+}
+
+@media (max-width: 780px) {
+  .site-ticker-row__inner { flex-wrap: wrap; padding-top: 4px; padding-bottom: 4px; }
+  .live-ticker { max-width: 100%; width: 100%; }
+  .breaking-ticker { flex-basis: 100%; }
+  .site-ticker-row__divider { display: none; }
+}
+
+/* ============================================================
+   DEVICE VISIBILITY UTILITIES (Featured/Pamungkas per-section toggle)
+   ============================================================ */
+@media (min-width: 981px) { .u-hide-desktop { display: none !important; } }
+@media (max-width: 980px) { .u-hide-mobile { display: none !important; } }
 
 /* Mobile nav drawer */
 .crypto-nav__mobile {
