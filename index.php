@@ -298,27 +298,6 @@ require __DIR__ . '/includes/site-header.php';
         </div>
     </section>
 
-    <!-- ══════════ NEWSLETTER ══════════ -->
-    <section class="crypto-section--tight">
-        <div class="crypto-container">
-            <div class="glass-card crypto-card" style="padding:40px;text-align:center;">
-                <h3 style="font-size:22px;">Jangan Ketinggalan Update</h3>
-                <p style="max-width:480px;margin:0 auto 20px;">Daftarkan email kamu untuk menerima ringkasan berita crypto &amp; market terbaru.</p>
-                <form method="post" action="contact-submit.php" style="display:flex;gap:10px;max-width:440px;margin:0 auto;flex-wrap:wrap;justify-content:center;">
-                    <input type="hidden" name="full_name" value="Newsletter Subscriber">
-                    <input type="hidden" name="subject" value="Newsletter">
-                    <input class="form-input" style="flex:1;min-width:220px;" type="email" name="email" placeholder="nama@email.com" required>
-                    <input type="hidden" name="message" value="Mendaftar newsletter SagaCrypto.">
-                    <div class="hp-field" aria-hidden="true">
-                        <label for="wpm-newsletter-website">Website</label>
-                        <input type="text" id="wpm-newsletter-website" name="website" tabindex="-1" autocomplete="off">
-                    </div>
-                    <button type="submit" class="crypto-btn crypto-btn--primary">Berlangganan</button>
-                </form>
-            </div>
-        </div>
-    </section>
-
     <!-- ══════════ KONTAK ══════════ -->
     <section id="kontak" class="crypto-section crypto-section--tight">
         <div class="crypto-container">
