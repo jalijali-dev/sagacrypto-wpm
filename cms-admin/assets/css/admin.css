@@ -1450,6 +1450,28 @@ body.admin-body {
   text-decoration: underline;
 }
 
+/* Growth Agent page only (see $bodyClass in cms-admin/pages/growth-agent.php)
+   — .panel itself has no padding by design (tables/.panel__head/.form-grid
+   provide their own), but the "Style rules" / "Maintenance" panels on this
+   page drop a bare .section-lead / <form> directly inside a .panel with no
+   wrapping card, so text/controls end up flush against the panel border.
+   Scoped to .page-growth-agent instead of changing .section-lead globally,
+   since most of its usages elsewhere sit in page-header toolbars that are
+   already correctly padded by the page layout. Also drops .section-lead's
+   default max-width:56ch here — that's meant for short page-header leads,
+   but inside a full-width panel it left an empty gap on the right instead
+   of the paragraph using the panel's actual width. */
+.page-growth-agent .panel > .section-lead {
+  padding: 14px 20px 16px;
+  margin-top: 0;
+  max-width: none;
+  line-height: 1.6;
+}
+
+.page-growth-agent .panel > .section-lead + form {
+  padding: 0 20px 20px;
+}
+
 /* ============================================================
    TABLES
    ============================================================ */

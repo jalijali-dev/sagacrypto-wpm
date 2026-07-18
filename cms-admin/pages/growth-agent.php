@@ -185,6 +185,10 @@ $statusPill = [
     'manual_action' => 'info',
 ];
 
+// Scopes the panel text/spacing CSS fix in admin.css to this page only —
+// see .page-growth-agent rules there.
+$bodyClass = 'page-growth-agent';
+
 require dirname(__DIR__) . '/includes/header.php';
 require dirname(__DIR__) . '/includes/sidebar.php';
 require dirname(__DIR__) . '/includes/navbar.php';
@@ -360,7 +364,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
             &gt; 90 hari). Job berstatus <strong>Manual Actions</strong> (belum di-review) dan job yang sudah
             di-Approve sebagai contoh (few-shot) tidak pernah dihapus otomatis maupun manual.
         </p>
-        <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:8px;align-items:center;" onsubmit="return confirm('Hapus job selesai/gagal yang lebih tua dari jumlah hari ini? Job yang masih menunggu review tidak akan terhapus.');">
+        <form method="post" action="<?= cms_esc($selfUrl) ?>" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;" onsubmit="return confirm('Hapus job selesai/gagal yang lebih tua dari jumlah hari ini? Job yang masih menunggu review tidak akan terhapus.');">
             <?= cms_csrf_field() ?>
             <input type="hidden" name="action" value="cleanup_jobs">
             <label class="muted" style="font-size:13px;">Hapus job selesai/gagal yang lebih tua dari</label>
