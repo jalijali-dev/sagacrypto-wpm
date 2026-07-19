@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 // ─── CMS identity ─────────────────────────────────────────────────────────────
 define('CMS_ADMIN_NAME',    'WPM');
-define('CMS_ADMIN_TAGLINE', 'Admin panel');
+define('CMS_ADMIN_TAGLINE', 'SAGACRYPTO.COM');
 
 // ─── Project root filesystem path ─────────────────────────────────────────────
 // cms-admin/config/ → dirname(__DIR__)   = cms-admin/
