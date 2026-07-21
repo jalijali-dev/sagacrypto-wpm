@@ -254,10 +254,98 @@ $statsCards = [
     ['label' => 'Manual Actions', 'value' => $safeCount($pdo, "SELECT COUNT(*) AS cnt FROM growth_agent_jobs WHERE status = 'manual_action'"), 'hint' => 'Operator execution required'],
 ];
 
+/**
+ * Human-readable preview of a job's output_json, shaped per job_type
+ * (each generate endpoint produces a different output shape — see
+ * cms-admin/api/article-generate.php, faq-generate.php, seo-generate.php,
+ * and cms_growth_agent_generate_content_optimization()/
+ * cms_growth_agent_generate_article_idea() in growth-agent-service.php).
+ * Returns already-escaped HTML — every value is run through cms_esc()
+ * before being placed. Used in the "Recent jobs" table so an admin can
+ * see what's actually being approved, not just click Approve blind.
+ */
+function cms_growth_agent_format_job_preview(string $jobType, ?string $outputJson): string
+{
+    if ($outputJson === null || trim($outputJson) === '') {
+        return '<span class="muted">Belum ada output (job belum selesai atau gagal — lihat pesan error di kolom Status).</span>';
+    }
+
+    $data = json_decode($outputJson, true);
+    if (!is_array($data)) {
+        return '<span class="muted">Output tidak bisa dibaca (JSON tidak valid).</span>';
+    }
+
+    $field = static function (string $label, string $value, string $marginTop = '0') {
+        return $value !== ''
+            ? '<div style="margin-top:' . $marginTop . ';"><strong>' . cms_esc($label) . ':</strong> ' . cms_esc($value) . '</div>'
+            : '';
+    };
+    $list = static function (string $label, array $items) {
+        if ($items === []) {
+            return '';
+        }
+        $html = '<div style="margin-top:8px;"><strong>' . cms_esc($label) . ':</strong><ul style="margin:4px 0 0;padding-left:18px;">';
+        foreach ($items as $item) {
+            $html .= '<li>' . cms_esc((string) $item) . '</li>';
+        }
+        return $html . '</ul></div>';
+    };
+
+    switch ($jobType) {
+        case 'article_draft':
+            $html = $field('Meta title', (string) ($data['meta_title'] ?? ''))
+                . $field('Meta description', (string) ($data['meta_description'] ?? ''))
+                . $field('Excerpt', (string) ($data['excerpt'] ?? ''), '8px');
+            $content = trim(strip_tags((string) ($data['content'] ?? '')));
+            if ($content !== '') {
+                $truncated = mb_substr($content, 0, 1500);
+                $html .= '<div style="margin-top:8px;"><strong>Content (plain text preview):</strong><br>'
+                    . nl2br(cms_esc($truncated)) . (mb_strlen($content) > 1500 ? '…' : '') . '</div>';
+            }
+            return $html !== '' ? $html : '<span class="muted">Output kosong.</span>';
+
+        case 'faq':
+            $items = is_array($data['faq'] ?? null) ? $data['faq'] : [];
+            if ($items === []) {
+                return '<span class="muted">Tidak ada FAQ item.</span>';
+            }
+            $html = '<ol style="margin:0;padding-left:18px;">';
+            foreach ($items as $item) {
+                $html .= '<li style="margin-bottom:6px;"><strong>' . cms_esc((string) ($item['question'] ?? '')) . '</strong><br>'
+                    . cms_esc((string) ($item['answer'] ?? '')) . '</li>';
+            }
+            return $html . '</ol>';
+
+        case 'seo_meta':
+        case 'seo_recommendation':
+            // seo_recommendation has its own dedicated Review page
+            // (recommended_meta_title/description keys, not
+            // meta_title/meta_description) — still worth a quick glance
+            // here before clicking through.
+            $html = $field('Meta title', (string) ($data['meta_title'] ?? $data['recommended_meta_title'] ?? ''))
+                . $field('Meta description', (string) ($data['meta_description'] ?? $data['recommended_meta_description'] ?? ''), '4px');
+            return $html !== '' ? $html : '<span class="muted">Output kosong.</span>';
+
+        case 'gsc_content_optimization':
+            $html = $field('Summary', (string) ($data['summary'] ?? ''));
+            $html .= $list('Suggested sections', is_array($data['suggested_sections'] ?? null) ? $data['suggested_sections'] : []);
+            return $html !== '' ? $html : '<span class="muted">Output kosong.</span>';
+
+        case 'gsc_article_idea':
+            $html = $field('Judul usulan', (string) ($data['title'] ?? ''));
+            $html .= $list('Outline', is_array($data['outline'] ?? null) ? $data['outline'] : []);
+            return $html !== '' ? $html : '<span class="muted">Output kosong.</span>';
+
+        default:
+            return '<pre style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px;">'
+                . cms_esc((string) json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . '</pre>';
+    }
+}
+
 // ── Recent jobs — with page title (if linked) and whether feedback already exists ──
 $jobsStmt = $pdo->query(
     "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.priority, j.model_used, j.latency_ms,
-            j.error_message, j.created_at, p.title AS page_title,
+            j.error_message, j.output_json, j.created_at, p.title AS page_title,
             (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) AS feedback_count
        FROM growth_agent_jobs j
        LEFT JOIN pages p ON p.page_id = j.page_id
@@ -612,6 +700,18 @@ require dirname(__DIR__) . '/includes/alerts.php';
                                 <?php endif; ?>
                             </td>
                         </tr>
+                        <?php if ($job['output_json'] !== null) : ?>
+                            <tr>
+                                <td colspan="7" style="padding-top:0;padding-bottom:0;border-top:none;">
+                                    <details>
+                                        <summary style="cursor:pointer;font-size:12px;color:var(--brown-soft);padding:4px 0;">Preview isi draft</summary>
+                                        <div style="font-size:13px;padding:8px 0 12px;max-width:640px;">
+                                            <?= cms_growth_agent_format_job_preview((string) $job['job_type'], $job['output_json']) ?>
+                                        </div>
+                                    </details>
+                                </td>
+                            </tr>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                 </tbody>
             </table>
