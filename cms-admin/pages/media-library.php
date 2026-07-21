@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/schema-guard.php';
+require_once dirname(__DIR__) . '/includes/image-optimizer.php';
 
 $pageTitle = 'Media Library';
 $currentNav = 'media-library';
@@ -125,11 +126,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $ml_redirect('Disallowed file type (' . $detectedMime . ').', 'error', $errEditQuery);
         }
 
-        // --- Step 3: per-type size limit (5 MB images, 10 MB PDF) ---------------
-        $maxBytes = ($detectedMime === 'application/pdf') ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
+        // --- Step 3: per-type size limit (3 MB images, 10 MB PDF) ---------------
+        // Hard reject, never auto-compressed to fit — the admin picks a
+        // smaller file or compresses manually. See docs/IMAGE_OPTIMIZATION_PLAN.md §2.
+        $maxBytes = ($detectedMime === 'application/pdf') ? 10 * 1024 * 1024 : 3 * 1024 * 1024;
         if ($fileBytes > $maxBytes) {
-            $limitLabel = ($maxBytes === 10 * 1024 * 1024) ? '10 MB' : '5 MB';
-            $ml_redirect('File exceeds the ' . $limitLabel . ' limit for this file type.', 'error', $errEditQuery);
+            $limitLabel = ($maxBytes === 10 * 1024 * 1024) ? '10 MB' : '3 MB';
+            $fileSizeMb = number_format($fileBytes / (1024 * 1024), 1);
+            $ml_redirect(
+                'File terlalu besar (' . $fileSizeMb . ' MB). Maksimal ' . $limitLabel
+                . ' — coba kompres gambar dulu atau pilih file lain.',
+                'error',
+                $errEditQuery
+            );
         }
 
         // Canonical extension comes from the MIME map, not the user's filename.
@@ -174,13 +183,35 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
         @chmod($targetPath, 0644);
 
+        // --- Step 7: optimize (JPEG/PNG only) — resize + convert + compress -----
+        // Never blocks the upload: on any failure/unavailability the original
+        // file from Step 6 is kept as-is. See docs/IMAGE_OPTIMIZATION_PLAN.md.
+        $finalRelPath  = '/' . $relDir . '/' . $safeFilename;
+        $finalFileName = $safeFilename;
+        $finalMime     = $detectedMime;
+        $finalBytes    = $fileBytes;
+
+        if (in_array($detectedMime, ['image/jpeg', 'image/png'], true)) {
+            $optResult = cms_image_optimize($targetPath, $diskDir, $base, 1200, 80);
+            if ($optResult['ok']) {
+                @unlink($targetPath);
+                $finalRelPath  = '/' . $relDir . '/' . $optResult['output_filename'];
+                $finalFileName = $optResult['output_filename'];
+                $finalMime     = $optResult['output_mime'];
+                $optBytes      = @filesize($optResult['output_path']);
+                $finalBytes    = $optBytes !== false ? $optBytes : $fileBytes;
+            } elseif ($optResult['skipped_reason'] === 'no_gd') {
+                error_log('cms_image_optimize skipped: GD extension not available on this server.');
+            }
+        }
+
         // Stored path uses leading slash — matches all other upload modules.
-        $uploadedRelPath  = '/' . $relDir . '/' . $safeFilename;
-        $uploadedFileName = $safeFilename;
-        $uploadedMime     = $detectedMime;
-        $uploadedSizeKb   = (int) ceil($fileBytes / 1024);
-        $uploadedFileType = str_starts_with($detectedMime, 'image/') ? 'image'
-                          : ($detectedMime === 'application/pdf' ? 'document' : 'other');
+        $uploadedRelPath  = $finalRelPath;
+        $uploadedFileName = $finalFileName;
+        $uploadedMime     = $finalMime;
+        $uploadedSizeKb   = (int) ceil($finalBytes / 1024);
+        $uploadedFileType = str_starts_with($finalMime, 'image/') ? 'image'
+                          : ($finalMime === 'application/pdf' ? 'document' : 'other');
     }
     // -------------------------------------------------------------------------
 
@@ -535,7 +566,10 @@ require dirname(__DIR__) . '/includes/alerts.php';
                            id="ml-upload-file"
                            accept=".jpg,.jpeg,.png,.webp,.gif,.pdf">
                     <small class="ml-hint">
-                        Allowed: JPG, PNG, WebP, GIF, PDF · Max 5 MB.
+                        Allowed: JPG, PNG, WebP, GIF, PDF · Max 3 MB (hard limit, files above this are rejected).
+                        Ideal target: under 300 KB. Photos/illustrations are best as JPG or WebP — these are
+                        automatically compressed and resized (max 1200px wide) on upload. PNG is kept as-is
+                        for images that need transparency (logos/icons).
                         Uploading auto-fills the fields below.
                         <?php if ($editRow && $val($editRow, 'file_path') !== '') : ?>
                             Leave empty to keep the current file.

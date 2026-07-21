@@ -528,7 +528,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                        autocomplete="off">
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
-                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 3 MB.</small>
             </label>
             <label class="field">Open Graph image
                 <input type="text" name="og_image"
@@ -689,7 +689,7 @@ require dirname(__DIR__) . '/includes/alerts.php';
                        autocomplete="off">
                 <button type="button" class="admin-btn admin-btn--secondary js-pg-img-pick" data-target="featured_image"
                         style="margin-top:6px;align-self:flex-start;">Choose from Media Library</button>
-                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 5 MB.</small>
+                <small style="font-size:11px;color:var(--muted,#888);display:block;margin-top:6px;">Recommended: 1200 × 630 px. JPG, PNG, atau WEBP. Maks. 3 MB.</small>
             </label>
             <label class="field">Open Graph image
                 <input type="text" name="og_image"

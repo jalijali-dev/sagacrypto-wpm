@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/image-optimizer.php';
+
 /**
  * Reusable file-upload helper for the CMS admin panel.
  *
@@ -32,6 +34,12 @@ declare(strict_types=1);
  *                            slug). When omitted the sanitised original filename is used.
  * extra_mimes  list<string>  Optional. Additional MIME types to accept for this field only
  *                            (e.g. 'application/octet-stream' for .ico files).
+ * optimize     bool          Optional, default false. When true, JPEG/PNG uploads are run
+ *                            through cms_image_optimize() (resize max 1200px, WebP with a
+ *                            JPG fallback, PNG kept as-is when it uses real transparency) —
+ *                            see cms-admin/includes/image-optimizer.php. Any other MIME
+ *                            (SVG, ICO, WebP, ...) is left untouched regardless of this flag.
+ *                            On any optimizer failure the original upload is kept as-is.
  *
  * @param array<string, array{
  *   path_field:   string,
@@ -43,6 +51,7 @@ declare(strict_types=1);
  *   mimes:        list<string>,
  *   basename?:    string,
  *   extra_mimes?: list<string>,
+ *   optimize?:    bool,
  * }> $specs           Keyed by the $_FILES input name.
  * @param array<string, string> $currentPaths  Existing stored paths, keyed by path_field.
  *                                             Pass an empty array when creating (no old file to delete).
@@ -153,6 +162,20 @@ function cms_process_file_uploads(array $specs, array $currentPaths, string $pro
 
         // Normalise permissions (octal literal, not string).
         @chmod($targetPath, 0644);
+
+        // Optional optimize pass (JPEG/PNG only — see cms_image_optimize()).
+        // Never blocks the upload: any failure keeps the original file as-is.
+        if (
+            ($config['optimize'] ?? false) === true
+            && in_array($detectedMime, ['image/jpeg', 'image/png'], true)
+        ) {
+            $optResult = cms_image_optimize($targetPath, $diskDir, $base, 1200, 80);
+            if ($optResult['ok']) {
+                @unlink($targetPath);
+                $safeFilename = $optResult['output_filename'];
+                $targetPath   = $optResult['output_path'];
+            }
+        }
 
         $newFiles[] = $targetPath;
 

@@ -62,18 +62,20 @@ function banners_process_image_uploads(array $paths, string $projectRoot): array
             'label'      => 'Desktop image',
             'disk_dir'   => 'uploads/banners',
             'web_prefix' => '/uploads/banners/',
-            'max_bytes'  => 5 * 1024 * 1024,
+            'max_bytes'  => 3 * 1024 * 1024,
             'extensions' => ['jpg', 'jpeg', 'png', 'webp'],
             'mimes'      => ['image/jpeg', 'image/png', 'image/webp'],
+            'optimize'   => true,
         ],
         'mobile_image_file' => [
             'path_field' => 'mobile_image',
             'label'      => 'Mobile image',
             'disk_dir'   => 'uploads/banners',
             'web_prefix' => '/uploads/banners/',
-            'max_bytes'  => 5 * 1024 * 1024,
+            'max_bytes'  => 3 * 1024 * 1024,
             'extensions' => ['jpg', 'jpeg', 'png', 'webp'],
             'mimes'      => ['image/jpeg', 'image/png', 'image/webp'],
+            'optimize'   => true,
         ],
     ];
 

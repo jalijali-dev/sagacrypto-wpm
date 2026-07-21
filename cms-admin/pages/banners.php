@@ -131,13 +131,15 @@ $val = static function (array $row, string $key): string {
 $desktopImageRemarks = [
     'Allowed: JPG, PNG, WEBP',
     'Recommended desktop: 1920×900 px',
-    'Max size: 5 MB',
+    'Max size: 3 MB',
+    'Auto-optimized (resize + WebP) on upload',
 ];
 
 $mobileImageRemarks = [
     'Allowed: JPG, PNG, WEBP',
     'Recommended mobile: 900×1200 px',
-    'Max size: 5 MB',
+    'Max size: 3 MB',
+    'Auto-optimized (resize + WebP) on upload',
 ];
 
 $isAlwaysOnChecked = true;

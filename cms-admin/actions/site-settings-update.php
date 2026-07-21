@@ -54,9 +54,10 @@ $specs = [
         'label'      => 'Logo',
         'disk_dir'   => 'uploads/site/logo',
         'web_prefix' => '/uploads/site/logo/',
-        'max_bytes'  => 5 * 1024 * 1024,
+        'max_bytes'  => 3 * 1024 * 1024,
         'extensions' => ['jpg', 'jpeg', 'png', 'svg', 'webp'],
         'mimes'      => ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'],
+        'optimize'   => true, // no-op for SVG/WebP uploads — only JPEG/PNG are touched
     ],
     'favicon_file' => [
         'path_field'  => 'favicon_path',
@@ -73,9 +74,10 @@ $specs = [
         'label'      => 'OG image',
         'disk_dir'   => 'uploads/site/seo',
         'web_prefix' => '/uploads/site/seo/',
-        'max_bytes'  => 5 * 1024 * 1024,
+        'max_bytes'  => 3 * 1024 * 1024,
         'extensions' => ['jpg', 'jpeg', 'png', 'webp'],
         'mimes'      => ['image/jpeg', 'image/png', 'image/webp'],
+        'optimize'   => true,
     ],
 ];
 

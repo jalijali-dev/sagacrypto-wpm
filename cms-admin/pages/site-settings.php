@@ -115,7 +115,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         [
                             'Allowed: JPG, PNG, SVG, WEBP',
                             'Recommended: 300×100 px',
-                            'Max size: 5 MB',
+                            'Max size: 3 MB',
+                            'JPG/PNG auto-optimized (resize + WebP) on upload — SVG kept as-is',
                         ]
                     ); ?>
                     <?php $renderSiteSettingsImageField(
@@ -168,7 +169,8 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         [
                             'Allowed: JPG, PNG, WEBP',
                             'Recommended: 1200×630 px',
-                            'Max size: 5 MB',
+                            'Max size: 3 MB',
+                            'Auto-optimized (resize + WebP) on upload',
                         ]
                     ); ?>
                     <label class="field">Google Analytics ID
