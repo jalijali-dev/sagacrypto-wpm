@@ -72,6 +72,25 @@ is fine there). If your server is older, drop the `IF NOT EXISTS` clause
 and check manually first (or just let the live PHP auto-migration handle
 it instead — that route doesn't need this syntax).
 
+**Update (18 Jul 2026):** the assumption above turned out wrong in
+practice — `015_gsc_search_console.sql` hit MySQL error #1064 ("syntax
+error near IF NOT EXISTS") on the actual production server on its first
+real run, contradicting this file's own claim about MariaDB 10.6. (Worth
+checking the real server version if this matters again — every migration
+000-014 uses this same `ADD COLUMN IF NOT EXISTS` clause and has
+apparently never actually been run raw against production before now;
+they were all effectively exercised only via the PHP lazy auto-migration
+path, which doesn't have this syntax problem — see `cms_ensure_column()`
+in `schema-guard.php`, it checks `information_schema.COLUMNS` first, same
+spirit as the fix below.) `015` and `016` were patched to guard every
+`ADD COLUMN` behind a throwaway stored procedure
+(`IF NOT EXISTS (SELECT ... FROM INFORMATION_SCHEMA.COLUMNS ...) THEN
+ALTER TABLE ... END IF`) instead of the bare SQL clause — portable across
+effectively any MySQL/MariaDB version. Migrations `000`-`014` were **not**
+touched (per this project's own rule: never edit old migration files) —
+if any of them ever need a real raw run against this production server,
+they'll hit the same #1064 and need the same treatment at that time.
+
 ## File index
 
 | File | Fase | Tables |

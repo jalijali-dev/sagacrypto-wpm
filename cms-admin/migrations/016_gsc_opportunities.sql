@@ -57,9 +57,32 @@ CREATE TABLE IF NOT EXISTS `gsc_opportunities` (
 -- thresholds stay easy to tune later without touching code. See
 -- cms_gsc_default_opportunity_thresholds() in gsc-api.php for the shape
 -- and default values.
+--
+-- NOTE: "ADD COLUMN IF NOT EXISTS" requires MySQL 8.0.29+ / MariaDB
+-- 10.3+ — confirmed NOT safe to assume on this project's production
+-- server (015_gsc_search_console.sql hit MySQL error #1064 there on
+-- first run, 18 Jul 2026). Guarded via a throwaway stored procedure
+-- instead — same pattern as 015's fix, works on effectively every
+-- MySQL/MariaDB version.
 -- --------------------------------------------------------
-ALTER TABLE `gsc_settings`
-    ADD COLUMN IF NOT EXISTS `opportunity_thresholds_json` LONGTEXT DEFAULT NULL AFTER `fetch_window_days`;
+DELIMITER $$
+DROP PROCEDURE IF EXISTS `_m016_add_gsc_settings_thresholds`$$
+CREATE PROCEDURE `_m016_add_gsc_settings_thresholds`()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'gsc_settings'
+           AND COLUMN_NAME = 'opportunity_thresholds_json'
+    ) THEN
+        ALTER TABLE `gsc_settings`
+            ADD COLUMN `opportunity_thresholds_json` LONGTEXT DEFAULT NULL AFTER `fetch_window_days`;
+    END IF;
+END$$
+DELIMITER ;
+
+CALL `_m016_add_gsc_settings_thresholds`();
+DROP PROCEDURE IF EXISTS `_m016_add_gsc_settings_thresholds`;
 
 -- --------------------------------------------------------
 -- growth_agent_jobs: pre-existing table (014_growth_agent.sql /

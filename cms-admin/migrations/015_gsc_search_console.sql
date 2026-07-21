@@ -74,9 +74,32 @@ CREATE TABLE IF NOT EXISTS `gsc_query_data` (
 -- be flagged HIGH for the operator's attention in the Recent jobs table.
 -- Non-GSC jobs (seo_meta/article_draft/faq generated manually) simply
 -- keep the column default ('normal') — this label is GSC-analysis-only.
+--
+-- NOTE: "ADD COLUMN IF NOT EXISTS" requires MySQL 8.0.29+ / MariaDB
+-- 10.3+ — not safe to assume on every server (confirmed on production,
+-- 18 Jul 2026: this exact clause threw MySQL error #1064 there, despite
+-- migrations/README.md's older note claiming the live server was
+-- MariaDB 10.6). Guarded via a throwaway stored procedure instead, which
+-- works on effectively every MySQL/MariaDB version still in use.
 -- --------------------------------------------------------
-ALTER TABLE `growth_agent_jobs`
-    ADD COLUMN IF NOT EXISTS `priority` ENUM('normal','high') NOT NULL DEFAULT 'normal' AFTER `status`;
+DELIMITER $$
+DROP PROCEDURE IF EXISTS `_m015_add_growth_agent_jobs_priority`$$
+CREATE PROCEDURE `_m015_add_growth_agent_jobs_priority`()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'growth_agent_jobs'
+           AND COLUMN_NAME = 'priority'
+    ) THEN
+        ALTER TABLE `growth_agent_jobs`
+            ADD COLUMN `priority` ENUM('normal','high') NOT NULL DEFAULT 'normal' AFTER `status`;
+    END IF;
+END$$
+DELIMITER ;
+
+CALL `_m015_add_growth_agent_jobs_priority`();
+DROP PROCEDURE IF EXISTS `_m015_add_growth_agent_jobs_priority`;
 
 -- Verify result
 SHOW COLUMNS FROM `gsc_settings`;
