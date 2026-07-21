@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/schema-guard.php';
 require_once dirname(__DIR__) . '/includes/growth-agent-service.php';
+require_once dirname(__DIR__) . '/includes/gsc-api.php';
 
 // Same tier as the rest of AI Management — see cms_require_role() in
 // functions.php for the full tier breakdown.
@@ -20,6 +21,12 @@ cms_growth_agent_ensure_schema($pdo);
 // what's protected from deletion. A manual "Bersihkan job lama" button
 // further down runs the same function on demand with a chosen window.
 cms_growth_agent_cleanup_old_jobs($pdo, 90);
+
+// Lazy GSC fetch — no cron in this codebase (§ 0.1 of the integration
+// plan, docs/GSC_INTEGRATION_PLAN.md — an explicit decision, not the
+// project default). Re-fetches only if GSC is connected AND the last
+// fetch is more than 24h old; a no-op otherwise. Never throws.
+cms_gsc_fetch_if_stale($pdo, 24);
 
 $pageTitle = 'Growth Agent';
 $currentNav = 'growth-agent';
@@ -115,6 +122,94 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $redirect('Scan selesai (' . $scanStats['scanned'] . ' artikel) tapi tidak ada rekomendasi yang berhasil dibuat. Coba lagi nanti.', 'error');
     }
 
+    // ── Recompute Prioritized Opportunities on demand — same pure SQL/
+    // scoring pass that already runs automatically after every GSC fetch
+    // (cms_gsc_fetch_and_cache() -> cms_gsc_compute_opportunities()); this
+    // button exists for refreshing scores without waiting for the next
+    // fetch (e.g. after tuning thresholds). See
+    // docs/GSC_OPPORTUNITIES_REVISION.md.
+    if ($action === 'recompute_opportunities') {
+        $result = cms_gsc_compute_opportunities($pdo);
+        $redirect($result['ok']
+            ? $result['count'] . ' opportunity dihitung ulang.'
+            : 'Gagal recompute: ' . $result['error'], $result['ok'] ? 'success' : 'error');
+    }
+
+    // ── Generate on-demand from one Prioritized Opportunities row ────────
+    // The opportunity table itself is pure scoring (no AI, computed by
+    // cms_gsc_compute_opportunities()) — AI is only ever called here, for
+    // the ONE row the operator picked. Dispatches by recommended_action,
+    // reusing the exact same generate engines as before (single-item
+    // calls, not bulk). See docs/GSC_OPPORTUNITIES_REVISION.md § 5.
+    if ($action === 'generate_from_opportunity') {
+        $oppId = (int) ($_POST['opportunity_id'] ?? 0);
+        if ($oppId <= 0) {
+            $redirect('Opportunity tidak valid.', 'error');
+        }
+
+        $oppStmt = $pdo->prepare("SELECT * FROM gsc_opportunities WHERE id = :id AND status = 'open' LIMIT 1");
+        $oppStmt->execute(['id' => $oppId]);
+        $opp = $oppStmt->fetch();
+        if (!$opp) {
+            $redirect('Opportunity tidak ditemukan atau sudah pernah di-generate.', 'error');
+        }
+
+        $metrics = json_decode((string) ($opp['metrics_json'] ?? ''), true);
+        $metrics = is_array($metrics) ? $metrics : [];
+        $priority = (string) $opp['priority'];
+        $jobId = 0;
+        $ok = false;
+        $genError = 'Aksi tidak dikenal untuk opportunity ini.';
+
+        if ($opp['recommended_action'] === 'seo_recommendation') {
+            $pageStmt = $pdo->prepare(
+                'SELECT page_id, title, slug, excerpt, content, meta_title, meta_description FROM pages WHERE page_id = :id LIMIT 1'
+            );
+            $pageStmt->execute(['id' => (int) $opp['matched_page_id']]);
+            $page = $pageStmt->fetch();
+            if (!$page) {
+                $redirect('Artikel sumber tidak ditemukan — mungkin sudah dihapus.', 'error');
+            }
+            $result = cms_growth_agent_run_seo_recommendation_scan($pdo, [$page], [(int) $page['page_id'] => $priority]);
+            $ok = $result['created'] > 0;
+            $jobId = (int) ($result['job_ids'][0] ?? 0);
+            $genError = $ok ? '' : 'AI request gagal atau hasil tidak dalam format yang diharapkan.';
+        } elseif ($opp['recommended_action'] === 'gsc_content_optimization') {
+            $pageStmt = $pdo->prepare('SELECT page_id, title, slug, excerpt, content FROM pages WHERE page_id = :id LIMIT 1');
+            $pageStmt->execute(['id' => (int) $opp['matched_page_id']]);
+            $page = $pageStmt->fetch();
+            if (!$page) {
+                $redirect('Artikel sumber tidak ditemukan — mungkin sudah dihapus.', 'error');
+            }
+            $page['avg_position'] = $metrics['position'] ?? 0;
+            $page['impressions'] = $metrics['impressions'] ?? 0;
+            $page['top_queries'] = $metrics['top_queries'] ?? '';
+            $result = cms_growth_agent_generate_content_optimization($pdo, $page, $priority);
+            $ok = $result['ok'];
+            $jobId = $result['job_id'];
+            $genError = $result['error'];
+        } elseif ($opp['recommended_action'] === 'gsc_article_idea') {
+            $queryData = [
+                'query' => (string) $opp['query_text'],
+                'impressions' => (int) ($metrics['impressions'] ?? 0),
+                'avg_position' => (float) ($metrics['position'] ?? 0),
+            ];
+            $result = cms_growth_agent_generate_article_idea($pdo, $queryData, $priority);
+            $ok = $result['ok'];
+            $jobId = $result['job_id'];
+            $genError = $result['error'];
+        }
+
+        if ($jobId > 0) {
+            $pdo->prepare("UPDATE gsc_opportunities SET status = 'actioned', linked_job_id = :job_id WHERE id = :id")
+                ->execute(['job_id' => $jobId, 'id' => $oppId]);
+        }
+
+        $redirect($ok
+            ? 'Rekomendasi berhasil digenerate — cek tabel "Recent jobs" di bawah untuk review.'
+            : 'Generate gagal: ' . $genError, $ok ? 'success' : 'error');
+    }
+
     // ── Manual cleanup — same rules as the lazy auto-cleanup above, just
     // on-demand with a chosen retention window. Never removes 'ready',
     // 'running', or 'manual_action' jobs, and never removes a 'succeeded'
@@ -161,7 +256,7 @@ $statsCards = [
 
 // ── Recent jobs — with page title (if linked) and whether feedback already exists ──
 $jobsStmt = $pdo->query(
-    "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.model_used, j.latency_ms,
+    "SELECT j.id, j.job_type, j.agent_key, j.page_id, j.status, j.priority, j.model_used, j.latency_ms,
             j.error_message, j.created_at, p.title AS page_title,
             (SELECT COUNT(*) FROM growth_agent_feedback f WHERE f.job_id = j.id) AS feedback_count
        FROM growth_agent_jobs j
@@ -184,6 +279,64 @@ $statusPill = [
     'failed' => 'warn',
     'manual_action' => 'info',
 ];
+
+$gscSettings = cms_gsc_get_settings($pdo);
+$gscConnected = !empty($gscSettings['is_active']) && !empty($gscSettings['site_url']);
+
+// ── GSC aggregate stats + Top Queries (docs/GSC_OPPORTUNITIES_REVISION.md § 4) ──
+$gscAggregate = null;
+$gscTopQueries = [];
+if ($gscConnected) {
+    try {
+        $aggRow = $pdo->query(
+            'SELECT SUM(clicks) AS total_clicks, SUM(impressions) AS total_impressions,
+                    AVG(position) AS avg_position, MIN(data_date) AS min_date, MAX(data_date) AS max_date
+               FROM gsc_query_data'
+        )->fetch();
+        if ($aggRow && (int) ($aggRow['total_impressions'] ?? 0) > 0) {
+            $impressions = (int) $aggRow['total_impressions'];
+            $gscAggregate = [
+                'clicks' => (int) $aggRow['total_clicks'],
+                'impressions' => $impressions,
+                'ctr' => round(((int) $aggRow['total_clicks'] / $impressions) * 100, 2),
+                'avg_position' => round((float) $aggRow['avg_position'], 1),
+                'min_date' => (string) $aggRow['min_date'],
+                'max_date' => (string) $aggRow['max_date'],
+            ];
+        }
+
+        $topStmt = $pdo->query(
+            'SELECT query, SUM(clicks) AS clicks, SUM(impressions) AS impressions, AVG(position) AS position
+               FROM gsc_query_data
+              GROUP BY query
+              ORDER BY impressions DESC
+              LIMIT 10'
+        );
+        $gscTopQueries = $topStmt->fetchAll();
+    } catch (Throwable $e) {
+        $gscAggregate = null;
+        $gscTopQueries = [];
+    }
+}
+
+// ── Prioritized Opportunities (docs/GSC_OPPORTUNITIES_REVISION.md) ──────
+$opportunities = [];
+if ($gscConnected) {
+    try {
+        $oppStmt = $pdo->query(
+            "SELECT o.*, p.title AS page_title, p.slug AS page_slug
+               FROM gsc_opportunities o
+               LEFT JOIN pages p ON p.page_id = o.matched_page_id
+              WHERE o.status = 'open'
+              ORDER BY FIELD(o.priority, 'high', 'medium', 'low'), o.impact_score DESC
+              LIMIT 30"
+        );
+        $opportunities = $oppStmt->fetchAll();
+    } catch (Throwable $e) {
+        $opportunities = [];
+    }
+}
+$priorityPill = ['high' => 'warn', 'medium' => 'accent', 'low' => 'muted'];
 
 // Scopes the panel text/spacing CSS fix in admin.css to this page only —
 // see .page-growth-agent rules there.
@@ -210,6 +363,160 @@ require dirname(__DIR__) . '/includes/alerts.php';
         </div>
     </div>
     <p class="section-lead" style="margin-top:-8px;">Scan checks published articles that haven't been scanned yet (up to 5 per click) and proposes an improved meta title/description for each — nothing is changed until you review and apply it.</p>
+
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Google Search Console</h3>
+            <span class="pill pill--<?= $gscConnected ? 'ok' : 'muted' ?>"><?= $gscConnected ? 'Connected' : 'Not connected' ?></span>
+        </div>
+        <div class="toolbar" style="padding:16px 20px 20px;">
+            <div class="toolbar__left">
+                <?php if ($gscConnected) : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Property: <code><?= cms_esc((string) $gscSettings['site_url']) ?></code><br>
+                        Last fetch:
+                        <?php if (!empty($gscSettings['last_fetch_at'])) : ?>
+                            <span class="pill pill--<?= $gscSettings['last_fetch_status'] === 'success' ? 'ok' : 'warn' ?>" style="margin-left:4px;"><?= cms_esc((string) $gscSettings['last_fetch_status']) ?></span>
+                            <?= (int) $gscSettings['last_fetch_rows'] ?> rows — <?= cms_esc((string) $gscSettings['last_fetch_at']) ?>
+                        <?php else : ?>
+                            <span class="muted">belum pernah — akan otomatis jalan begitu halaman ini dibuka (atau klik Refresh Data).</span>
+                        <?php endif; ?>
+                    </p>
+                <?php else : ?>
+                    <p class="muted" style="margin:0;font-size:13px;">
+                        Belum tersambung ke Google Search Console — rekomendasi berbasis data GSC (tabel "Prioritized Opportunities" di bawah) belum bisa jalan.
+                        <a class="panel__link" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">Hubungkan sekarang &rarr;</a>
+                    </p>
+                <?php endif; ?>
+            </div>
+            <div class="toolbar__right" style="gap:8px;">
+                <?php if ($gscConnected) : ?>
+                    <form method="post" action="<?= cms_esc(cms_action_href('gsc-refresh.php')) ?>">
+                        <?= cms_csrf_field() ?>
+                        <button type="submit" class="admin-btn admin-btn--secondary">Refresh Data</button>
+                    </form>
+                    <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                        <?= cms_csrf_field() ?>
+                        <input type="hidden" name="action" value="recompute_opportunities">
+                        <button type="submit" class="admin-btn admin-btn--ghost">Recompute Opportunities</button>
+                    </form>
+                <?php endif; ?>
+                <a class="admin-btn admin-btn--ghost" href="<?= cms_esc(cms_nav_href('gsc-settings.php')) ?>">GSC Settings</a>
+            </div>
+        </div>
+
+        <?php if ($gscAggregate !== null) : ?>
+            <div class="table-wrap" style="padding:0 20px 4px;">
+                <p class="muted" style="font-size:12px;margin:0 0 12px;">
+                    Rentang data: <?= cms_esc($gscAggregate['min_date']) ?> &ndash; <?= cms_esc($gscAggregate['max_date']) ?>
+                    (<?= (int) ($gscSettings['fetch_lookback_days'] ?? 14) ?> hari lookback) — Search Console punya delay
+                    &sim;3 hari, jadi beberapa hari paling baru belum tentu lengkap.
+                </p>
+            </div>
+            <div class="admin-grid admin-grid--stats" style="padding:0 20px 20px;">
+                <article class="stat-card">
+                    <div class="stat-card__label">Clicks</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['clicks']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Impressions</div>
+                    <div class="stat-card__value"><?= number_format($gscAggregate['impressions']) ?></div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">CTR</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['ctr']) ?>%</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-card__label">Avg. Position</div>
+                    <div class="stat-card__value"><?= cms_esc((string) $gscAggregate['avg_position']) ?></div>
+                </article>
+            </div>
+
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($gscTopQueries === []) : ?>
+                            <tr><td colspan="5" class="muted">Belum ada data.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($gscTopQueries as $q) : ?>
+                            <?php $qImpressions = (int) $q['impressions']; $qCtr = $qImpressions > 0 ? round(((int) $q['clicks'] / $qImpressions) * 100, 2) : 0.0; ?>
+                            <tr>
+                                <td><?= cms_esc((string) $q['query']) ?></td>
+                                <td><?= number_format((int) $q['clicks']) ?></td>
+                                <td><?= number_format($qImpressions) ?></td>
+                                <td><?= cms_esc((string) $qCtr) ?>%</td>
+                                <td><?= cms_esc((string) round((float) $q['position'], 1)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($gscConnected) : ?>
+    <div class="panel">
+        <div class="panel__head">
+            <h3 class="panel__title">Prioritized Opportunities</h3>
+            <span class="panel__meta"><?= count($opportunities) ?> open</span>
+        </div>
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Priority</th>
+                        <th>Item</th>
+                        <th>Matched Categories</th>
+                        <th>Impact</th>
+                        <th>Effort</th>
+                        <th>Recommended Agent</th>
+                        <th>Reason</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($opportunities === []) : ?>
+                        <tr><td colspan="8" class="muted">Belum ada opportunity — akan muncul otomatis setelah data GSC di-fetch (atau klik "Recompute Opportunities" di atas).</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($opportunities as $opp) : ?>
+                        <tr>
+                            <td><span class="pill pill--<?= $priorityPill[$opp['priority']] ?? 'muted' ?>"><?= strtoupper(cms_esc((string) $opp['priority'])) ?></span></td>
+                            <td>
+                                <?php if ($opp['item_type'] === 'page') : ?>
+                                    <?= $opp['page_title'] ? cms_esc((string) $opp['page_title']) : '<span class="muted">Artikel #' . (int) $opp['matched_page_id'] . '</span>' ?>
+                                    <span class="muted" style="font-size:11px;">(page)</span>
+                                <?php else : ?>
+                                    <?= cms_esc((string) $opp['query_text']) ?>
+                                    <span class="muted" style="font-size:11px;">(query)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php foreach (array_filter(array_map('trim', explode(',', (string) $opp['matched_categories']))) as $cat) : ?>
+                                    <span class="pill pill--muted" style="margin:0 3px 3px 0;"><?= cms_esc($cat) ?></span>
+                                <?php endforeach; ?>
+                            </td>
+                            <td><?= (int) $opp['impact_score'] ?>/10</td>
+                            <td><?= (int) $opp['effort_score'] ?>/10</td>
+                            <td><code><?= cms_esc((string) $opp['recommended_agent']) ?></code></td>
+                            <td class="muted" style="font-size:12px;max-width:320px;"><?= cms_esc((string) $opp['reason']) ?></td>
+                            <td class="table-actions">
+                                <form method="post" action="<?= cms_esc($selfUrl) ?>">
+                                    <?= cms_csrf_field() ?>
+                                    <input type="hidden" name="action" value="generate_from_opportunity">
+                                    <input type="hidden" name="opportunity_id" value="<?= (int) $opp['id'] ?>">
+                                    <button type="submit" class="admin-btn admin-btn--sm admin-btn--primary">Generate</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="admin-grid admin-grid--stats">
         <?php foreach ($statsCards as $card) : ?>
@@ -261,6 +568,11 @@ require dirname(__DIR__) . '/includes/alerts.php';
                             <td><?= $job['page_title'] ? cms_esc((string) $job['page_title']) : '<span class="muted">—</span>' ?></td>
                             <td>
                                 <span class="pill pill--<?= $pill ?>"><?= cms_esc((string) $job['status']) ?></span>
+                                <?php if (($job['priority'] ?? 'medium') === 'high') : ?>
+                                    <span class="pill pill--warn" title="Prioritas tinggi — sinyal GSC kuat, worth ditindaklanjuti duluan">HIGH</span>
+                                <?php elseif (($job['priority'] ?? 'medium') === 'low') : ?>
+                                    <span class="pill pill--muted" title="Prioritas rendah">LOW</span>
+                                <?php endif; ?>
                                 <?php if ($job['status'] === 'failed' && $job['error_message']) : ?>
                                     <div class="muted" style="font-size:11px;margin-top:4px;max-width:220px;"><?= cms_esc(mb_substr((string) $job['error_message'], 0, 140)) ?></div>
                                 <?php endif; ?>

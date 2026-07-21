@@ -92,6 +92,40 @@ function cms_growth_agent_ensure_schema(PDO $pdo): void
          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
          UNIQUE KEY uniq_gap_page_date (page_id, metric_date)"
     );
+
+    cms_growth_agent_ensure_priority_enum($pdo);
+}
+
+/**
+ * Widens growth_agent_jobs.priority from the 015-era 2-tier enum
+ * ('normal','high') to the 3-tier ('low','medium','high') used by
+ * Prioritized Opportunities (016_gsc_opportunities.sql) — see
+ * docs/GSC_OPPORTUNITIES_REVISION.md. Only ever runs the ALTERs when the
+ * column is still in the old shape (checked via information_schema, not
+ * a try/catch-and-ignore) — cms_ensure_column() can ADD a missing column
+ * but can't widen an existing enum, so this fills that gap. Safe to call
+ * on every page load, same idempotent spirit as cms_ensure_table().
+ */
+function cms_growth_agent_ensure_priority_enum(PDO $pdo): void
+{
+    $check = $pdo->prepare(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'growth_agent_jobs' AND COLUMN_NAME = 'priority'"
+    );
+    $check->execute();
+    $columnType = (string) $check->fetchColumn();
+
+    if ($columnType === '' || str_contains($columnType, "'medium'")) {
+        return; // column doesn't exist yet (cms_ensure_column() below handles that) or already widened
+    }
+
+    // 3-step MySQL enum rename: widen (keep 'normal' valid) -> migrate
+    // existing data -> narrow to the final 3-tier shape. A direct MODIFY
+    // straight to the new enum would silently blank out any row still
+    // holding 'normal', since that value wouldn't exist in the new list.
+    $pdo->exec("ALTER TABLE `growth_agent_jobs` MODIFY COLUMN `priority` ENUM('normal','low','medium','high') NOT NULL DEFAULT 'normal'");
+    $pdo->exec("UPDATE `growth_agent_jobs` SET `priority` = 'medium' WHERE `priority` = 'normal'");
+    $pdo->exec("ALTER TABLE `growth_agent_jobs` MODIFY COLUMN `priority` ENUM('low','medium','high') NOT NULL DEFAULT 'medium'");
 }
 
 /**
@@ -114,22 +148,24 @@ function cms_growth_agent_log_job(
     ?int $tokensIn,
     ?int $tokensOut,
     ?int $latencyMs,
-    string $errorMessage = ''
+    string $errorMessage = '',
+    string $priority = 'medium'
 ): int {
     try {
         cms_growth_agent_ensure_schema($pdo);
 
         $stmt = $pdo->prepare(
             'INSERT INTO growth_agent_jobs
-                (job_type, agent_key, page_id, status, input_brief, output_json, model_used, tokens_in, tokens_out, latency_ms, error_message, created_by, created_at, updated_at)
+                (job_type, agent_key, page_id, status, priority, input_brief, output_json, model_used, tokens_in, tokens_out, latency_ms, error_message, created_by, created_at, updated_at)
              VALUES
-                (:job_type, :agent_key, :page_id, :status, :input_brief, :output_json, :model_used, :tokens_in, :tokens_out, :latency_ms, :error_message, :created_by, NOW(), NOW())'
+                (:job_type, :agent_key, :page_id, :status, :priority, :input_brief, :output_json, :model_used, :tokens_in, :tokens_out, :latency_ms, :error_message, :created_by, NOW(), NOW())'
         );
         $stmt->execute([
             'job_type'      => $jobType,
             'agent_key'     => $agentKey,
             'page_id'       => $pageId,
             'status'        => $status,
+            'priority'      => in_array($priority, ['low', 'medium', 'high'], true) ? $priority : 'medium',
             'input_brief'   => json_encode($inputBrief, JSON_UNESCAPED_UNICODE),
             'output_json'   => $outputData !== null ? json_encode($outputData, JSON_UNESCAPED_UNICODE) : null,
             'model_used'    => $modelUsed,
@@ -169,18 +205,10 @@ function cms_growth_agent_log_job(
  */
 function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): array
 {
-    $stats = ['scanned' => 0, 'created' => 0, 'errors' => 0];
-
     try {
-        require_once __DIR__ . '/ai-helpers.php';
         cms_growth_agent_ensure_schema($pdo);
-    } catch (Throwable $e) {
-        return $stats;
-    }
+        $limit = max(1, min(20, $limit));
 
-    $limit = max(1, min(20, $limit));
-
-    try {
         $stmt = $pdo->prepare(
             "SELECT page_id, title, slug, excerpt, content, meta_title, meta_description
                FROM pages
@@ -196,10 +224,45 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
         $stmt->execute();
         $pages = $stmt->fetchAll();
     } catch (Throwable $e) {
+        return ['scanned' => 0, 'created' => 0, 'errors' => 0];
+    }
+
+    return cms_growth_agent_run_seo_recommendation_scan($pdo, $pages);
+}
+
+/**
+ * Shared engine behind cms_growth_agent_scan_seo_recommendations() (date-
+ * based candidate selection) and the on-demand "Generate" dispatch from a
+ * Prioritized Opportunity row (docs/GSC_OPPORTUNITIES_REVISION.md § 5,
+ * called from pages/growth-agent.php with a single-page array) — both
+ * just select candidate pages differently, then hand them to this
+ * function to actually call the AI, parse the result, and log one
+ * job_type='seo_recommendation' row per page. Extracted so the two
+ * candidate-selection strategies never drift out of sync on the
+ * generate/parse/log logic itself. Reused as-is (unchanged) by the
+ * Prioritized Opportunities revision — it already accepted an arbitrary
+ * page list + per-page priority map before that revision existed.
+ *
+ * @param list<array<string, mixed>> $pages
+ * @param array<int, string> $priorityMap page_id => 'low'|'medium'|'high', defaults to 'medium' when a page isn't in the map
+ * @return array{scanned:int, created:int, errors:int}
+ */
+function cms_growth_agent_run_seo_recommendation_scan(PDO $pdo, array $pages, array $priorityMap = []): array
+{
+    // job_ids: every job actually logged (success or failure), in order —
+    // added for the Prioritized Opportunities dispatch (called with a
+    // single-page array), which needs the new job's id to link
+    // gsc_opportunities.linked_job_id. The original bulk/date-based
+    // caller ignores this key, so it's purely additive.
+    $stats = ['scanned' => 0, 'created' => 0, 'errors' => 0, 'job_ids' => []];
+
+    if ($pages === []) {
         return $stats;
     }
 
-    if ($pages === []) {
+    try {
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
         return $stats;
     }
 
@@ -232,6 +295,7 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
     foreach ($pages as $page) {
         $stats['scanned']++;
         $pageId = (int) $page['page_id'];
+        $priority = $priorityMap[$pageId] ?? 'medium';
 
         $currentMetaTitle = (string) ($page['meta_title'] ?? '');
         $currentMetaDescription = (string) ($page['meta_description'] ?? '');
@@ -246,6 +310,10 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
             'current_meta_title' => $currentMetaTitle,
             'current_meta_description' => $currentMetaDescription,
         ];
+        if (isset($page['total_impressions'])) {
+            $inputBrief['gsc_impressions'] = (int) $page['total_impressions'];
+            $inputBrief['gsc_clicks'] = (int) ($page['total_clicks'] ?? 0);
+        }
 
         try {
             $result = cms_ai_call_provider(
@@ -279,11 +347,12 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
 
         if (!$result['success'] || !is_array($parsed) || !isset($parsed['recommended_meta_title'], $parsed['recommended_meta_description'])) {
             $stats['errors']++;
-            cms_growth_agent_log_job(
+            $stats['job_ids'][] = cms_growth_agent_log_job(
                 $pdo, 'seo_recommendation', 'seo_agent', $pageId, 'failed', $inputBrief, null,
                 $agent['model'], $tokensIn ?: null, $tokensOut ?: null, $result['latency_ms'] ?? null,
-                $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error'])
-                    . ($retried ? ' (after 1 retry)' : '')
+                ($result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']))
+                    . ($retried ? ' (after 1 retry)' : ''),
+                $priority
             );
             continue;
         }
@@ -293,10 +362,11 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
 
         if ($recommendedMetaTitle === '' || $recommendedMetaDescription === '') {
             $stats['errors']++;
-            cms_growth_agent_log_job(
+            $stats['job_ids'][] = cms_growth_agent_log_job(
                 $pdo, 'seo_recommendation', 'seo_agent', $pageId, 'failed', $inputBrief, null,
                 $agent['model'], $tokensIn ?: null, $tokensOut ?: null, $result['latency_ms'] ?? null,
-                'AI returned an empty recommendation' . ($retried ? ' (after 1 retry)' : '')
+                'AI returned an empty recommendation' . ($retried ? ' (after 1 retry)' : ''),
+                $priority
             );
             continue;
         }
@@ -308,14 +378,201 @@ function cms_growth_agent_scan_seo_recommendations(PDO $pdo, int $limit = 5): ar
             'recommended_meta_description' => $recommendedMetaDescription,
         ];
 
-        cms_growth_agent_log_job(
+        $stats['job_ids'][] = cms_growth_agent_log_job(
             $pdo, 'seo_recommendation', 'seo_agent', $pageId, 'manual_action', $inputBrief, $output,
-            $agent['model'], $tokensIn ?: null, $tokensOut ?: null, $result['latency_ms'] ?? null
+            $agent['model'], $tokensIn ?: null, $tokensOut ?: null, $result['latency_ms'] ?? null,
+            '', $priority
         );
         $stats['created']++;
     }
 
     return $stats;
+}
+
+/**
+ * Tipe 2 (striking distance / "Page-one" category) — existing article,
+ * content optimization candidate. Generates ONE job for ONE page, called
+ * on-demand when the operator clicks "Generate" on a Prioritized
+ * Opportunities row (docs/GSC_OPPORTUNITIES_REVISION.md § 5) — candidate
+ * selection/scoring already happened in cms_gsc_compute_opportunities()
+ * (gsc-api.php), this function only does the AI call + log. Does NOT
+ * write anywhere itself — produces suggested content additions the human
+ * copy/pastes in manually, so it uses the generic Approve/Reject flow on
+ * pages/growth-agent.php (status goes straight to succeeded/failed, no
+ * 'manual_action' apply step, same as article_draft/faq generation).
+ *
+ * @param array{page_id:int|string, title:string, slug:string, excerpt:string, content:string, avg_position:float|int, impressions:int, top_queries:string} $page
+ * @return array{ok:bool, job_id:int, error:string}
+ */
+function cms_growth_agent_generate_content_optimization(PDO $pdo, array $page, string $priority = 'medium'): array
+{
+    try {
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+
+    $pageId = (int) $page['page_id'];
+    $impressions = (int) ($page['impressions'] ?? 0);
+    $avgPosition = (float) ($page['avg_position'] ?? 0);
+    $topQueries = (string) ($page['top_queries'] ?? '');
+
+    $defaultSystemPrompt =
+        'You are the Growth Agent content strategist for SagaCrypto, a crypto & market news website. ' .
+        'You are given an existing PUBLISHED article that already ranks close to page one for certain ' .
+        'search queries but has not broken into the top 10 yet ("striking distance"). Given the article ' .
+        'title, slug, excerpt, content, its average ranking position, and the queries it ranks for, ' .
+        'suggest concrete content improvements — additional sections or subheadings to add, points to ' .
+        'expand, related sub-topics to cover — that would plausibly help it rank higher for those specific ' .
+        'queries. Do not suggest changing the meta title/description (a separate tool handles that). ' .
+        'Respond in the same language as the article content (default Bahasa Indonesia). Respond with ONLY ' .
+        'a raw JSON object, no markdown, no code fences, no commentary, in exactly this shape: ' .
+        '{"suggested_sections": ["...", "..."], "summary": "..."}';
+
+    $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+    if (!$agent['ok']) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $agent['error']];
+    }
+
+    $growthContext = '';
+    try {
+        require_once dirname(__DIR__, 2) . '/services/GrowthAgentPromptBuilder.php';
+        $growthContext = trim((new GrowthAgentPromptBuilder($pdo))->buildContext('growth_agent', 'gsc_content_optimization'));
+    } catch (Throwable $e) {
+        // Ignore — generation proceeds on the agent's own system prompt.
+    }
+    $systemPrompt = $growthContext !== ''
+        ? trim($agent['system_prompt'] . "\n\n" . $growthContext)
+        : $agent['system_prompt'];
+
+    $userPrompt = "Title: {$page['title']}\nSlug: {$page['slug']}\nExcerpt: {$page['excerpt']}\n" .
+        "Average ranking position: " . round($avgPosition, 1) . "\n" .
+        "Total impressions (recent window): {$impressions}\n" .
+        "Ranks for these queries: {$topQueries}\n" .
+        "Content:\n" . mb_substr((string) $page['content'], 0, 6000);
+
+    $inputBrief = [
+        'title' => (string) $page['title'],
+        'slug' => (string) $page['slug'],
+        'avg_position' => round($avgPosition, 1),
+        'gsc_impressions' => $impressions,
+        'top_queries' => $topQueries,
+    ];
+
+    try {
+        $result = cms_ai_call_provider(
+            $agent['provider'], $agent['api_key'], $agent['model'],
+            $userPrompt, $systemPrompt, max($agent['max_tokens'], 400), $agent['temperature']
+        );
+    } catch (Throwable $e) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+
+    $parsed = $result['success'] ? cms_ai_extract_json($result['text']) : null;
+
+    if (!$result['success'] || !is_array($parsed) || !isset($parsed['suggested_sections'])) {
+        $errorMessage = $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']);
+        $jobId = cms_growth_agent_log_job(
+            $pdo, 'gsc_content_optimization', 'growth_agent', $pageId, 'failed', $inputBrief, null,
+            $agent['model'], null, null, $result['latency_ms'] ?? null, $errorMessage, $priority
+        );
+        return ['ok' => false, 'job_id' => $jobId, 'error' => $errorMessage];
+    }
+
+    $jobId = cms_growth_agent_log_job(
+        $pdo, 'gsc_content_optimization', 'growth_agent', $pageId, 'succeeded', $inputBrief, $parsed,
+        $agent['model'], null, null, $result['latency_ms'] ?? null, '', $priority
+    );
+
+    return ['ok' => true, 'job_id' => $jobId, 'error' => ''];
+}
+
+/**
+ * Tipe 3 ("No article" category) — new article idea candidate. Generates
+ * ONE job for ONE query, called on-demand when the operator clicks
+ * "Generate" on a Prioritized Opportunities row
+ * (docs/GSC_OPPORTUNITIES_REVISION.md § 5) — candidate selection/scoring
+ * (including the "already suggested this query before" exclusion) already
+ * happened in cms_gsc_compute_opportunities() (gsc-api.php), this
+ * function only does the AI call + log. Also flows through the generic
+ * Approve/Reject queue on pages/growth-agent.php, same as Tipe 2.
+ *
+ * @param array{query:string, impressions:int, avg_position:float|int} $queryData
+ * @return array{ok:bool, job_id:int, error:string}
+ */
+function cms_growth_agent_generate_article_idea(PDO $pdo, array $queryData, string $priority = 'medium'): array
+{
+    try {
+        require_once __DIR__ . '/ai-helpers.php';
+    } catch (Throwable $e) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+
+    $query = (string) $queryData['query'];
+    $impressions = (int) ($queryData['impressions'] ?? 0);
+    $avgPosition = (float) ($queryData['avg_position'] ?? 0);
+
+    $defaultSystemPrompt =
+        'You are the Growth Agent content strategist for SagaCrypto, a crypto & market news website. ' .
+        'You are given a search query that gets meaningful search impressions but has NO existing article ' .
+        'on the site addressing it. Propose a new article idea: a compelling title, and a short outline ' .
+        '(3-6 bullet points) covering what the article should include. Keep it realistic for a news/guide ' .
+        'site — not a generic listicle. Respond in the same language as the query (default Bahasa ' .
+        'Indonesia). Respond with ONLY a raw JSON object, no markdown, no code fences, no commentary, in ' .
+        'exactly this shape: {"title": "...", "outline": ["...", "..."]}';
+
+    $agent = cms_ai_resolve_agent($pdo, 'growth_agent', $defaultSystemPrompt);
+    if (!$agent['ok']) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $agent['error']];
+    }
+
+    $growthContext = '';
+    try {
+        require_once dirname(__DIR__, 2) . '/services/GrowthAgentPromptBuilder.php';
+        $growthContext = trim((new GrowthAgentPromptBuilder($pdo))->buildContext('growth_agent', 'gsc_article_idea'));
+    } catch (Throwable $e) {
+        // Ignore — generation proceeds on the agent's own system prompt.
+    }
+    $systemPrompt = $growthContext !== ''
+        ? trim($agent['system_prompt'] . "\n\n" . $growthContext)
+        : $agent['system_prompt'];
+
+    $userPrompt = "Search query: {$query}\n" .
+        "Total impressions (recent window): {$impressions}\n" .
+        "Average position: " . round($avgPosition, 1);
+
+    $inputBrief = [
+        'query' => $query,
+        'gsc_impressions' => $impressions,
+        'avg_position' => round($avgPosition, 1),
+    ];
+
+    try {
+        $result = cms_ai_call_provider(
+            $agent['provider'], $agent['api_key'], $agent['model'],
+            $userPrompt, $systemPrompt, max($agent['max_tokens'], 400), $agent['temperature']
+        );
+    } catch (Throwable $e) {
+        return ['ok' => false, 'job_id' => 0, 'error' => $e->getMessage()];
+    }
+
+    $parsed = $result['success'] ? cms_ai_extract_json($result['text']) : null;
+
+    if (!$result['success'] || !is_array($parsed) || !isset($parsed['title'], $parsed['outline'])) {
+        $errorMessage = $result['success'] ? 'AI response was not in the expected format' : ('AI request failed: ' . $result['error']);
+        $jobId = cms_growth_agent_log_job(
+            $pdo, 'gsc_article_idea', 'growth_agent', null, 'failed', $inputBrief, null,
+            $agent['model'], null, null, $result['latency_ms'] ?? null, $errorMessage, $priority
+        );
+        return ['ok' => false, 'job_id' => $jobId, 'error' => $errorMessage];
+    }
+
+    $jobId = cms_growth_agent_log_job(
+        $pdo, 'gsc_article_idea', 'growth_agent', null, 'succeeded', $inputBrief, $parsed,
+        $agent['model'], null, null, $result['latency_ms'] ?? null, '', $priority
+    );
+
+    return ['ok' => true, 'job_id' => $jobId, 'error' => ''];
 }
 
 /**
