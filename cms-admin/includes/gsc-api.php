@@ -367,6 +367,23 @@ if (!function_exists('cms_gsc_list_sites')) {
     }
 }
 
+if (!function_exists('cms_gsc_site_url_label')) {
+    /**
+     * Google's Search Console has two distinct property types that can
+     * BOTH exist for the same site and BOTH show up in sites.list() —
+     * picking the wrong one is a common cause of "connected fine, but
+     * always 0 rows" (the other property variant has the actual tracked
+     * history, this one doesn't). Surfaced in the GSC Settings picker so
+     * the operator can tell them apart instead of guessing.
+     */
+    function cms_gsc_site_url_label(string $siteUrl): string
+    {
+        return str_starts_with($siteUrl, 'sc-domain:')
+            ? 'Domain property — mencakup semua varian (http/https, www/non-www, subdomain)'
+            : 'URL-prefix property — cuma exact match URL ini persis';
+    }
+}
+
 // ── Fetch pipeline ───────────────────────────────────────────────────────
 
 if (!function_exists('cms_gsc_page_url_index')) {
@@ -477,6 +494,34 @@ if (!function_exists('cms_gsc_fetch_and_cache')) {
         $decoded = json_decode($result['body'], true);
         $rows = is_array($decoded['rows'] ?? null) ? $decoded['rows'] : [];
 
+        if ($rows === []) {
+            // Request succeeded (HTTP 2xx) but Google returned no rows at
+            // all — NOT necessarily a bug. Common causes: (1) a brand-new
+            // property GSC hasn't finished accumulating queryable data
+            // for yet (can take a few days after verification, even with
+            // real traffic); (2) the wrong property variant was picked in
+            // GSC Settings — e.g. a URL-prefix property
+            // (https://sagacrypto.com/) selected while all of the site's
+            // actual tracked history lives under the Domain property
+            // (sc-domain:sagacrypto.com), or vice versa; a Domain and a
+            // URL-prefix property for the same site are BOTH valid,
+            // separate entries in sites.list() and only one of them may
+            // actually have data. Logged as a diagnostic (not
+            // cms_gsc_log_error's usual failure path) with the exact
+            // request/response so this is debuggable without server log
+            // access — see also cms_gsc_site_url_label() in GSC Settings,
+            // which now flags property type in the picker for this exact
+            // reason.
+            cms_gsc_log_error($pdo, sprintf(
+                "Fetch OK (HTTP %d) but 0 rows returned.\nsite_url: %s\nRequest URL: %s\nRequest body: %s\nRaw response: %s",
+                $result['status'],
+                (string) $settings['site_url'],
+                $queryUrl,
+                $requestBody,
+                mb_substr($result['body'], 0, 1500)
+            ));
+        }
+
         $pageIndex = cms_gsc_page_url_index($pdo);
 
         $upsert = $pdo->prepare(
@@ -524,7 +569,13 @@ if (!function_exists('cms_gsc_fetch_and_cache')) {
         $pdo->prepare('DELETE FROM gsc_query_data WHERE data_date < (CURDATE() - INTERVAL :days DAY)')
             ->execute(['days' => $windowDays]);
 
-        cms_gsc_record_fetch_result($pdo, true, '', $written);
+        // Surface the 0-rows case directly in the GSC panel (last_fetch_message)
+        // too, not just buried in Recent Errors — see the diagnostic log
+        // written above for the full request/response detail.
+        $fetchMessage = $written > 0
+            ? ''
+            : "0 rows untuk {$startDate}..{$endDate} (site: {$settings['site_url']}) — cek panel \"Recent Diagnostics\" di GSC Settings untuk detail request/response mentah.";
+        cms_gsc_record_fetch_result($pdo, true, $fetchMessage, $written);
 
         // Recompute Prioritized Opportunities right after every successful
         // fetch (decision: automatic, per docs/GSC_OPPORTUNITIES_REVISION.md

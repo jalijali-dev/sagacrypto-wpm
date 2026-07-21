@@ -117,6 +117,40 @@ if ($hasCredential && !$hasProperty) {
     }
 }
 
+// "Connected but always 0 rows" is most often caused by picking the
+// wrong property variant (see cms_gsc_site_url_label()) — flag it here
+// too if BOTH a Domain and a URL-prefix property showed up for the same
+// underlying site, not just at pick-time.
+$hasDomainAndPrefixVariant = false;
+if (count($availableSites) > 1) {
+    $hasDomain = false;
+    $hasPrefix = false;
+    foreach ($availableSites as $site) {
+        if (str_starts_with($site, 'sc-domain:')) {
+            $hasDomain = true;
+        } else {
+            $hasPrefix = true;
+        }
+    }
+    $hasDomainAndPrefixVariant = $hasDomain && $hasPrefix;
+}
+
+// Recent diagnostics — includes both actual request failures and the
+// "fetch OK but 0 rows" case logged by cms_gsc_fetch_and_cache(), so this
+// is the one place to check when data isn't showing up. Shown once a
+// service account is connected (relevant even before a property is
+// picked, e.g. if listing properties itself fails).
+$recentDiagnostics = [];
+if ($hasCredential) {
+    try {
+        $diagStmt = $pdo->prepare("SELECT message, created_at FROM api_error_log WHERE source = 'gsc' ORDER BY id DESC LIMIT 10");
+        $diagStmt->execute();
+        $recentDiagnostics = $diagStmt->fetchAll();
+    } catch (Throwable $e) {
+        $recentDiagnostics = [];
+    }
+}
+
 require dirname(__DIR__) . '/includes/header.php';
 require dirname(__DIR__) . '/includes/sidebar.php';
 require dirname(__DIR__) . '/includes/navbar.php';
@@ -172,6 +206,15 @@ require dirname(__DIR__) . '/includes/alerts.php';
                     sebagai User di Search Console property Anda, lalu reload halaman ini.
                 </p>
             <?php else : ?>
+                <?php if ($hasDomainAndPrefixVariant) : ?>
+                    <p class="lp-notice lp-notice--info" style="margin:0 0 16px;">
+                        Ada lebih dari satu tipe property terdaftar untuk service account ini — <strong>Domain property</strong>
+                        (<code>sc-domain:...</code>) dan <strong>URL-prefix property</strong> (<code>https://...</code>) itu dua
+                        entri terpisah di Search Console, dan cuma salah satunya yang biasanya benar-benar punya riwayat data
+                        ter-track. Kalau ragu, pilih yang <strong>Domain property</strong> — itu otomatis mencakup semua varian
+                        (http/https, www/non-www, subdomain) jadi lebih kecil kemungkinan salah pilih dan hasilnya 0 rows.
+                    </p>
+                <?php endif; ?>
                 <form class="form-stack" method="post" action="<?= cms_esc($selfUrl) ?>">
                     <?= cms_csrf_field() ?>
                     <input type="hidden" name="action" value="select_property">
@@ -179,9 +222,10 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <select name="site_url" required>
                             <option value="">— pilih property —</option>
                             <?php foreach ($availableSites as $site) : ?>
-                                <option value="<?= cms_esc($site) ?>"><?= cms_esc($site) ?></option>
+                                <option value="<?= cms_esc($site) ?>"><?= cms_esc($site) ?> — <?= cms_esc(cms_gsc_site_url_label($site)) ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <small class="field__hint">Kalau tampilan pilihan kepanjangan, cek isi lengkapnya di kode sumber URL — yang penting bagian sebelum " — " itu value persis yang tersimpan.</small>
                     </label>
                     <button type="submit" class="admin-btn admin-btn--primary">Connect property</button>
                 </form>
@@ -221,6 +265,35 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <input type="hidden" name="action" value="disconnect">
                 <button type="submit" class="admin-btn admin-btn--ghost">Disconnect</button>
             </form>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($hasCredential) : ?>
+        <div class="panel">
+            <div class="panel__head">
+                <h3 class="panel__title">Recent Diagnostics</h3>
+                <span class="panel__meta"><?= count($recentDiagnostics) ?> logged</span>
+            </div>
+            <p class="section-lead" style="padding:0 20px;">
+                Termasuk permintaan yang benar-benar gagal DAN kasus "fetch sukses tapi 0 rows" (bukan error, tapi tetap
+                dicatat di sini lengkap dengan request/response mentahnya) — cek di sini dulu kalau data tidak muncul-muncul.
+            </p>
+            <div class="table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th>Message</th><th style="width:160px;">When</th></tr></thead>
+                    <tbody>
+                        <?php if ($recentDiagnostics === []) : ?>
+                            <tr><td colspan="2" class="muted">Belum ada diagnostik tercatat.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($recentDiagnostics as $diag) : ?>
+                            <tr>
+                                <td><pre style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px;font-family:monospace;"><?= cms_esc((string) $diag['message']) ?></pre></td>
+                                <td class="muted"><code><?= cms_esc((string) $diag['created_at']) ?></code></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     <?php endif; ?>
 </section>
