@@ -76,6 +76,7 @@ $aiNavGroup = [
         ['id' => 'ai-models', 'label' => 'AI Models', 'href' => cms_nav_href('ai-models.php'), 'icon' => 'puzzle', 'roles' => $ROLES_ADMIN_UP],
         ['id' => 'ai-agent-settings', 'label' => 'AI Agent Settings', 'href' => cms_nav_href('ai-agent-settings.php'), 'icon' => 'person', 'roles' => $ROLES_ADMIN_UP],
         ['id' => 'growth-agent', 'label' => 'Growth Agent', 'href' => cms_nav_href('growth-agent.php'), 'icon' => 'chart', 'roles' => $ROLES_ADMIN_UP],
+        ['id' => 'agent-memory', 'label' => 'Agent Memory', 'href' => cms_nav_href('agent-memory.php'), 'icon' => 'puzzle', 'roles' => $ROLES_ADMIN_UP],
         ['id' => 'gsc-settings', 'label' => 'GSC Settings', 'href' => cms_nav_href('gsc-settings.php'), 'icon' => 'key', 'roles' => $ROLES_SUPER_ONLY],
     ],
 ];
