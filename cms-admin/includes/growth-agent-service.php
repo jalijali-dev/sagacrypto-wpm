@@ -680,3 +680,346 @@ function cms_growth_agent_notifications(PDO $pdo, int $limit = 8): array
 
     return $result;
 }
+
+// ── Agent Memory (docs/GROWTH_AGENT_MEMORY_PLAN.md) ──────────────────────
+//
+// Winning patterns / content gaps detected from gsc_query_data aggregated
+// across its FULL retention window (fetch_window_days, default 90 days —
+// not a single fetch snapshot, unlike gsc_opportunities). Every new draft
+// starts 'pending_review'; only 'active' entries are folded into
+// GrowthAgentPromptBuilder context, and only for job_type=gsc_article_idea
+// (see GrowthAgentPromptBuilder::activeMemoryEntries()).
+
+/**
+ * Lazy trigger — same "self-maintaining on request" spirit as
+ * cms_gsc_fetch_if_stale(), but a much longer default interval
+ * (memory_thresholds_json.detection_interval_days, default 7 days): "is
+ * this pattern still consistent" changes slowly, and re-running the
+ * full-window GROUP BY every page load would be wasted work producing
+ * near-identical drafts (review fatigue). A no-op if GSC isn't connected
+ * yet — there's nothing to detect patterns in. Never throws.
+ */
+function cms_growth_agent_detect_memory_if_stale(PDO $pdo, ?int $maxAgeDaysOverride = null): void
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $settings = cms_gsc_get_settings($pdo);
+        if ((int) ($settings['is_active'] ?? 0) !== 1 || empty($settings['site_url'])) {
+            return;
+        }
+
+        $thresholds = cms_gsc_get_memory_thresholds($pdo);
+        $maxAgeDays = $maxAgeDaysOverride ?? (int) $thresholds['detection_interval_days'];
+
+        $lastRun = $settings['last_memory_detection_at'] ?? null;
+        $isStale = $lastRun === null || (time() - strtotime((string) $lastRun)) >= (max(1, $maxAgeDays) * 86400);
+
+        if ($isStale) {
+            cms_growth_agent_detect_memory_patterns($pdo);
+        }
+    } catch (Throwable $e) {
+        // A lazy background detection pass must never break the page it's attached to.
+    }
+}
+
+/**
+ * Runs both detection queries (winning_pattern, content_gap) against the
+ * full gsc_query_data window, upserts results into growth_agent_memory,
+ * then runs the retention sweep in the same pass (docs/GROWTH_AGENT_MEMORY_PLAN.md
+ * § 5) and stamps gsc_settings.last_memory_detection_at. Called both by
+ * the lazy trigger above and the manual "Analisis Pola" button. Never
+ * throws.
+ *
+ * @return array{winning_pattern:int, content_gap:int, archived:int}
+ */
+function cms_growth_agent_detect_memory_patterns(PDO $pdo): array
+{
+    $stats = ['winning_pattern' => 0, 'content_gap' => 0, 'archived' => 0];
+
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        cms_gsc_ensure_schema($pdo);
+        $thresholds = cms_gsc_get_memory_thresholds($pdo);
+    } catch (Throwable $e) {
+        return $stats;
+    }
+
+    $minWeeks = max(1, (int) $thresholds['min_distinct_weeks']);
+    $minImpressions = max(0, (int) $thresholds['min_impressions']);
+    $winningCtr = (float) $thresholds['winning_ctr_threshold'];
+    $winningPosition = (float) $thresholds['winning_position_threshold'];
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT query,
+                    COUNT(DISTINCT YEARWEEK(data_date)) AS distinct_weeks,
+                    AVG(ctr) AS avg_ctr,
+                    AVG(position) AS avg_position,
+                    SUM(impressions) AS total_impressions
+               FROM gsc_query_data
+              GROUP BY query
+             HAVING distinct_weeks >= :min_weeks
+                AND total_impressions >= :min_impressions
+                AND (avg_ctr >= :winning_ctr OR avg_position <= :winning_position)"
+        );
+        $stmt->execute([
+            'min_weeks' => $minWeeks,
+            'min_impressions' => $minImpressions,
+            'winning_ctr' => $winningCtr,
+            'winning_position' => $winningPosition,
+        ]);
+        $winners = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        $winners = [];
+    }
+
+    foreach ($winners as $row) {
+        if (cms_growth_agent_memory_upsert($pdo, 'winning_pattern', $row)) {
+            $stats['winning_pattern']++;
+        }
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT query,
+                    COUNT(DISTINCT YEARWEEK(data_date)) AS distinct_weeks,
+                    SUM(impressions) AS total_impressions,
+                    AVG(position) AS avg_position
+               FROM gsc_query_data
+              GROUP BY query
+             HAVING distinct_weeks >= :min_weeks
+                AND total_impressions >= :min_impressions
+                AND SUM(CASE WHEN matched_page_id IS NOT NULL THEN 1 ELSE 0 END) = 0"
+        );
+        $stmt->execute([
+            'min_weeks' => $minWeeks,
+            'min_impressions' => $minImpressions,
+        ]);
+        $gaps = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        $gaps = [];
+    }
+
+    foreach ($gaps as $row) {
+        if (cms_growth_agent_memory_upsert($pdo, 'content_gap', $row)) {
+            $stats['content_gap']++;
+        }
+    }
+
+    $stats['archived'] = cms_growth_agent_memory_retention_sweep($pdo, $thresholds);
+
+    try {
+        $pdo->exec('UPDATE gsc_settings SET last_memory_detection_at = NOW() ORDER BY id ASC LIMIT 1');
+    } catch (Throwable $e) {
+        // Non-fatal — detection itself already ran independently of this bookkeeping.
+    }
+
+    return $stats;
+}
+
+/**
+ * Upserts one detected pattern by dedupe_key (MD5 of insight_type|query).
+ * Three cases, per docs/GROWTH_AGENT_MEMORY_PLAN.md § 2 & § 5:
+ *   - No existing row              → INSERT fresh, status='pending_review'.
+ *   - Existing, archived_reason='rejected' → suppressed permanently, no-op.
+ *   - Existing, archived_reason IN ('stale_pending','stale_active')
+ *                                   → revived as a fresh 'pending_review'
+ *                                     draft (auto-archived-by-age is not
+ *                                     a permanent rejection).
+ *   - Existing, status IN ('pending_review','active') → numbers refreshed
+ *     in place, last_confirmed_at bumped, status untouched (an approved
+ *     entry doesn't get bounced back to review just because the pattern
+ *     still holds; an unreviewed draft doesn't get duplicated either).
+ *
+ * @param array{query:string, distinct_weeks:int|string, total_impressions:int|string, avg_position:float|string, avg_ctr?:float|string} $row
+ * @return bool true only when this resulted in a brand-new (or revived) pending_review draft
+ */
+function cms_growth_agent_memory_upsert(PDO $pdo, string $insightType, array $row): bool
+{
+    $query = (string) $row['query'];
+    $dedupeKey = md5($insightType . '|' . $query);
+
+    $metrics = [
+        'query' => $query,
+        'distinct_weeks' => (int) $row['distinct_weeks'],
+        'total_impressions' => (int) $row['total_impressions'],
+        'avg_position' => round((float) ($row['avg_position'] ?? 0), 1),
+    ];
+    if ($insightType === 'winning_pattern') {
+        $metrics['avg_ctr'] = round((float) ($row['avg_ctr'] ?? 0), 4);
+    }
+    [$title, $description] = cms_growth_agent_memory_build_copy($insightType, $metrics);
+    $dataJson = json_encode($metrics, JSON_UNESCAPED_UNICODE);
+
+    $existingStmt = $pdo->prepare('SELECT id, status, archived_reason FROM growth_agent_memory WHERE dedupe_key = :key LIMIT 1');
+    $existingStmt->execute(['key' => $dedupeKey]);
+    $existing = $existingStmt->fetch();
+
+    if (!$existing) {
+        $pdo->prepare(
+            "INSERT INTO growth_agent_memory
+                (insight_type, title, description, supporting_data_json, status, dedupe_key, detected_at, last_confirmed_at, created_at)
+             VALUES
+                (:insight_type, :title, :description, :data, 'pending_review', :dedupe_key, NOW(), NOW(), NOW())"
+        )->execute([
+            'insight_type' => $insightType,
+            'title' => $title,
+            'description' => $description,
+            'data' => $dataJson,
+            'dedupe_key' => $dedupeKey,
+        ]);
+        return true;
+    }
+
+    if ($existing['status'] === 'archived') {
+        if ($existing['archived_reason'] === 'rejected') {
+            return false; // explicit reject — permanently suppressed
+        }
+        // stale_pending / stale_active — revive as a fresh draft.
+        $pdo->prepare(
+            "UPDATE growth_agent_memory
+                SET status = 'pending_review', archived_reason = NULL,
+                    title = :title, description = :description, supporting_data_json = :data,
+                    reviewed_by = NULL, reviewed_at = NULL,
+                    detected_at = NOW(), last_confirmed_at = NOW()
+              WHERE id = :id"
+        )->execute([
+            'title' => $title,
+            'description' => $description,
+            'data' => $dataJson,
+            'id' => $existing['id'],
+        ]);
+        return true;
+    }
+
+    // pending_review or active — refresh numbers only, status untouched.
+    $pdo->prepare(
+        'UPDATE growth_agent_memory
+            SET description = :description, supporting_data_json = :data, last_confirmed_at = NOW()
+          WHERE id = :id'
+    )->execute([
+        'description' => $description,
+        'data' => $dataJson,
+        'id' => $existing['id'],
+    ]);
+    return false;
+}
+
+/**
+ * Parametrized narrative — NOT AI-generated (same reasoning as
+ * cms_gsc_build_opportunity_reason() in gsc-api.php: drafts must be free
+ * and instant, no token cost just to list a pattern).
+ *
+ * @param array<string, mixed> $metrics
+ * @return array{0:string, 1:string} [title, description]
+ */
+function cms_growth_agent_memory_build_copy(string $insightType, array $metrics): array
+{
+    $query = (string) $metrics['query'];
+    $weeks = (int) $metrics['distinct_weeks'];
+    $impressions = (int) $metrics['total_impressions'];
+    $position = (float) $metrics['avg_position'];
+
+    if ($insightType === 'winning_pattern') {
+        $ctrPct = round(((float) ($metrics['avg_ctr'] ?? 0)) * 100, 2);
+        $title = "Query \"{$query}\" konsisten performa bagus";
+        $description = "Query \"{$query}\" muncul di {$weeks} minggu berbeda dalam data yang terkumpul, dengan total " .
+            "{$impressions} impressions, rata-rata CTR {$ctrPct}%, dan posisi rata-rata {$position}. Pola ini " .
+            "konsisten dari waktu ke waktu, bukan lonjakan satu kali.";
+        return [$title, $description];
+    }
+
+    $title = "Query \"{$query}\" berulang muncul tanpa artikel yang cocok";
+    $description = "Query \"{$query}\" muncul di {$weeks} minggu berbeda dalam data yang terkumpul, dengan total " .
+        "{$impressions} impressions (posisi rata-rata {$position}), tapi situs belum punya artikel yang " .
+        "membahasnya sama sekali di semua periode itu.";
+    return [$title, $description];
+}
+
+/**
+ * Archives entries that have gone stale (docs/GROWTH_AGENT_MEMORY_PLAN.md
+ * § 5) — 'pending_review' left unreviewed past pending_review_stale_days
+ * (default 30, counted from detected_at), and 'active' entries whose
+ * pattern hasn't been reconfirmed by a detection pass in active_stale_days
+ * (default 90, counted from last_confirmed_at — NOT detected_at, so a
+ * pattern that keeps holding true never goes stale just because it's
+ * old). Never deletes — archived rows are kept as a record and simply
+ * stop being folded into AI context (§ 4). Never throws.
+ */
+function cms_growth_agent_memory_retention_sweep(PDO $pdo, ?array $thresholds = null): int
+{
+    try {
+        require_once __DIR__ . '/gsc-api.php';
+        $thresholds = $thresholds ?? cms_gsc_get_memory_thresholds($pdo);
+        $pendingDays = max(1, (int) $thresholds['pending_review_stale_days']);
+        $activeDays = max(1, (int) $thresholds['active_stale_days']);
+
+        $archived = 0;
+
+        $stmt1 = $pdo->prepare(
+            "UPDATE growth_agent_memory
+                SET status = 'archived', archived_reason = 'stale_pending'
+              WHERE status = 'pending_review' AND detected_at < (NOW() - INTERVAL :days DAY)"
+        );
+        $stmt1->execute(['days' => $pendingDays]);
+        $archived += $stmt1->rowCount();
+
+        $stmt2 = $pdo->prepare(
+            "UPDATE growth_agent_memory
+                SET status = 'archived', archived_reason = 'stale_active'
+              WHERE status = 'active' AND last_confirmed_at < (NOW() - INTERVAL :days DAY)"
+        );
+        $stmt2->execute(['days' => $activeDays]);
+        $archived += $stmt2->rowCount();
+
+        return $archived;
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+/**
+ * Review actions — dispatched from pages/growth-agent.php. Each scoped to
+ * the expected current status (WHERE status = '...') so a stale/double
+ * form submission is naturally a no-op (rowCount 0) instead of
+ * corrupting state.
+ */
+function cms_growth_agent_memory_approve(PDO $pdo, int $id, ?int $reviewerId): bool
+{
+    $stmt = $pdo->prepare(
+        "UPDATE growth_agent_memory
+            SET status = 'active', archived_reason = NULL, reviewed_by = :reviewer, reviewed_at = NOW()
+          WHERE id = :id AND status = 'pending_review'"
+    );
+    $stmt->execute(['reviewer' => $reviewerId, 'id' => $id]);
+    return $stmt->rowCount() > 0;
+}
+
+function cms_growth_agent_memory_reject(PDO $pdo, int $id, ?int $reviewerId): bool
+{
+    $stmt = $pdo->prepare(
+        "UPDATE growth_agent_memory
+            SET status = 'archived', archived_reason = 'rejected', reviewed_by = :reviewer, reviewed_at = NOW()
+          WHERE id = :id AND status = 'pending_review'"
+    );
+    $stmt->execute(['reviewer' => $reviewerId, 'id' => $id]);
+    return $stmt->rowCount() > 0;
+}
+
+/**
+ * Manual early-retirement of an 'active' entry (admin decides to turn it
+ * off before the automatic staleness sweep would). Reuses the
+ * 'stale_active' reason bucket — both mean "no longer active, but not
+ * because it was rejected as wrong"; a dedicated "manually retired"
+ * reason isn't needed for MVP.
+ */
+function cms_growth_agent_memory_archive(PDO $pdo, int $id, ?int $reviewerId): bool
+{
+    $stmt = $pdo->prepare(
+        "UPDATE growth_agent_memory
+            SET status = 'archived', archived_reason = 'stale_active', reviewed_by = :reviewer, reviewed_at = NOW()
+          WHERE id = :id AND status = 'active'"
+    );
+    $stmt->execute(['reviewer' => $reviewerId, 'id' => $id]);
+    return $stmt->rowCount() > 0;
+}

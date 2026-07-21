@@ -39,6 +39,8 @@ if (!function_exists('cms_gsc_ensure_schema')) {
              fetch_lookback_days INT UNSIGNED NOT NULL DEFAULT 14,
              fetch_window_days INT UNSIGNED NOT NULL DEFAULT 90,
              opportunity_thresholds_json LONGTEXT DEFAULT NULL,
+             memory_thresholds_json LONGTEXT DEFAULT NULL,
+             last_memory_detection_at TIMESTAMP NULL DEFAULT NULL,
              last_fetch_status VARCHAR(20) DEFAULT NULL,
              last_fetch_message VARCHAR(255) DEFAULT NULL,
              last_fetch_rows INT UNSIGNED DEFAULT NULL,
@@ -49,9 +51,12 @@ if (!function_exists('cms_gsc_ensure_schema')) {
         if ($created) {
             $pdo->exec('INSERT INTO gsc_settings (is_active) VALUES (0)');
         }
-        // Column added after 015 shipped (016_gsc_opportunities.sql) — ensure it
-        // exists even on installs that already ran 015 before this revision.
+        // Columns added after 015 shipped (016_gsc_opportunities.sql /
+        // 017_growth_agent_memory.sql) — ensure they exist even on installs
+        // that already ran 015 before those revisions.
         cms_ensure_column($pdo, 'gsc_settings', 'opportunity_thresholds_json', 'LONGTEXT DEFAULT NULL AFTER `fetch_window_days`');
+        cms_ensure_column($pdo, 'gsc_settings', 'memory_thresholds_json', 'LONGTEXT DEFAULT NULL AFTER `opportunity_thresholds_json`');
+        cms_ensure_column($pdo, 'gsc_settings', 'last_memory_detection_at', 'TIMESTAMP NULL DEFAULT NULL AFTER `memory_thresholds_json`');
 
         cms_ensure_table(
             $pdo,
@@ -105,6 +110,29 @@ if (!function_exists('cms_gsc_ensure_schema')) {
         // (a straight cms_ensure_column() no-ops once the column already
         // exists, so it can't widen an existing enum by itself).
         cms_ensure_column($pdo, 'growth_agent_jobs', 'priority', "ENUM('low','medium','high') NOT NULL DEFAULT 'medium' AFTER `status`");
+
+        // "Agent Memory" — winning_pattern/content_gap insights detected
+        // from gsc_query_data aggregated across its full retention window.
+        // See docs/GROWTH_AGENT_MEMORY_PLAN.md.
+        cms_ensure_table(
+            $pdo,
+            'growth_agent_memory',
+            "id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+             insight_type ENUM('winning_pattern','content_gap') NOT NULL,
+             title VARCHAR(255) NOT NULL,
+             description TEXT DEFAULT NULL,
+             supporting_data_json TEXT DEFAULT NULL,
+             status ENUM('pending_review','active','archived') NOT NULL DEFAULT 'pending_review',
+             archived_reason ENUM('rejected','stale_pending','stale_active') DEFAULT NULL,
+             reviewed_by INT UNSIGNED DEFAULT NULL,
+             reviewed_at TIMESTAMP NULL DEFAULT NULL,
+             detected_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+             last_confirmed_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+             dedupe_key CHAR(32) NOT NULL,
+             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+             UNIQUE KEY uniq_gam_dedupe (dedupe_key),
+             KEY idx_gam_status (status)"
+        );
     }
 }
 
@@ -730,6 +758,71 @@ if (!function_exists('cms_gsc_get_opportunity_thresholds')) {
         try {
             $settings = cms_gsc_get_settings($pdo);
             $raw = (string) ($settings['opportunity_thresholds_json'] ?? '');
+            if ($raw === '') {
+                return $defaults;
+            }
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                return $defaults;
+            }
+            return array_replace_recursive($defaults, $decoded);
+        } catch (Throwable $e) {
+            return $defaults;
+        }
+    }
+}
+
+// ── Agent Memory thresholds (docs/GROWTH_AGENT_MEMORY_PLAN.md) ──────────
+//
+// Kept in a dedicated gsc_settings.memory_thresholds_json blob, separate
+// from opportunity_thresholds_json — same "one tunable place" spirit as
+// the opportunity thresholds above, but one place PER FEATURE rather
+// than mixing two unrelated concepts into a single blob.
+
+if (!function_exists('cms_gsc_default_memory_thresholds')) {
+    /**
+     * @return array<string, mixed>
+     */
+    function cms_gsc_default_memory_thresholds(): array
+    {
+        return [
+            // A query must show up in at least this many distinct
+            // ISO weeks (across gsc_query_data's full retention window,
+            // not one fetch) before it counts as a "consistent" pattern
+            // rather than a one-off spike.
+            'min_distinct_weeks' => 3,
+            // Floor — below this total impressions (summed over the
+            // whole window), a query is never surfaced as an insight at
+            // all, regardless of how many weeks it appears in.
+            'min_impressions' => 300,
+            // "winning_pattern" if EITHER of these holds (average over
+            // the whole window).
+            'winning_ctr_threshold' => 0.03,
+            'winning_position_threshold' => 10.0,
+            // Retention (§ 5 in the plan doc).
+            'pending_review_stale_days' => 30,
+            'active_stale_days' => 90,
+            // Lazy "if-stale" trigger interval — deliberately much
+            // longer than the 24h GSC fetch interval, since "is this
+            // pattern still consistent" changes slowly and re-running
+            // the full-window GROUP BY every fetch would be wasted work
+            // that produces nearly-identical drafts (review fatigue).
+            'detection_interval_days' => 7,
+        ];
+    }
+}
+
+if (!function_exists('cms_gsc_get_memory_thresholds')) {
+    /**
+     * @return array<string, mixed>
+     */
+    function cms_gsc_get_memory_thresholds(PDO $pdo): array
+    {
+        $defaults = cms_gsc_default_memory_thresholds();
+
+        try {
+            $settings = cms_gsc_get_settings($pdo);
+            $raw = (string) ($settings['memory_thresholds_json'] ?? '');
             if ($raw === '') {
                 return $defaults;
             }

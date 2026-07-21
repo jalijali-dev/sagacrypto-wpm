@@ -29,8 +29,20 @@ class GrowthAgentPromptBuilder
      * Build the style-guide + few-shot block for one agent. Never throws —
      * callers should still wrap this in try/catch, since a schema-ensure
      * failure (e.g. no CREATE TABLE privilege) must never block generation.
+     *
+     * Agent Memory (growth_agent_memory — see docs/GROWTH_AGENT_MEMORY_PLAN.md)
+     * is folded in as a third block, but ONLY when $jobType is
+     * 'gsc_article_idea' — new-article ideation is the one place
+     * historical winning-pattern/content-gap insights are relevant;
+     * revising an existing article (gsc_content_optimization) or
+     * rewriting its meta tags (seo_recommendation) doesn't need them.
+     * Deliberately gated here, inside the one shared entry point, rather
+     * than by asking each caller to remember to pass a flag — every
+     * caller already invokes buildContext($agentKey, $jobType, ...) with
+     * the correct $jobType for its own job, so this required zero changes
+     * at any call site.
      */
-    public function buildContext(string $agentKey, string $jobType, int $maxRules = 5, int $maxExamples = 3): string
+    public function buildContext(string $agentKey, string $jobType, int $maxRules = 5, int $maxExamples = 3, int $maxMemoryEntries = 8): string
     {
         $parts = [];
 
@@ -51,6 +63,14 @@ class GrowthAgentPromptBuilder
                 );
             }
             $parts[] = "Reference examples from past approved work:\n\n" . implode("\n\n", $exampleBlocks);
+        }
+
+        if ($jobType === 'gsc_article_idea') {
+            $memoryLines = $this->activeMemoryEntries($maxMemoryEntries);
+            if ($memoryLines !== []) {
+                $parts[] = "Known patterns from historical search data (context to inform the idea, not literal " .
+                    "instructions to follow word-for-word):\n- " . implode("\n- ", $memoryLines);
+            }
         }
 
         return implode("\n\n", $parts);
@@ -110,5 +130,55 @@ class GrowthAgentPromptBuilder
             'input_brief' => (string) $row['input_brief'],
             'output_json' => (string) $row['output_json'],
         ], $rows);
+    }
+
+    /**
+     * Admin-approved winning_pattern/content_gap insights
+     * (growth_agent_memory.status = 'active' only — pending_review and
+     * archived entries never reach the model). No relevance filtering
+     * against the specific query being generated for — same "everything
+     * active gets included" approach as activeStyleRules() above; scoped
+     * to embedding-based retrieval as a future refinement once the
+     * corpus is large, matching the note already on approvedExamples().
+     *
+     * @return string[] one formatted line per entry, e.g.
+     *   '[winning_pattern] Query "..." konsisten performa bagus (avg CTR 4.2%, 6 minggu, 3400 impressions)'
+     */
+    private function activeMemoryEntries(int $limit): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT insight_type, title, supporting_data_json
+               FROM growth_agent_memory
+              WHERE status = 'active'
+              ORDER BY last_confirmed_at DESC
+              LIMIT " . max(0, $limit)
+        );
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $lines = [];
+        foreach ($rows as $row) {
+            $metrics = json_decode((string) ($row['supporting_data_json'] ?? ''), true);
+            $metrics = is_array($metrics) ? $metrics : [];
+
+            $bits = [];
+            if (isset($metrics['total_impressions'])) {
+                $bits[] = $metrics['total_impressions'] . ' impressions';
+            }
+            if (isset($metrics['distinct_weeks'])) {
+                $bits[] = $metrics['distinct_weeks'] . ' minggu';
+            }
+            if (isset($metrics['avg_ctr'])) {
+                $bits[] = 'avg CTR ' . round(((float) $metrics['avg_ctr']) * 100, 2) . '%';
+            }
+            if (isset($metrics['avg_position'])) {
+                $bits[] = 'posisi ' . $metrics['avg_position'];
+            }
+
+            $summary = $bits !== [] ? ' (' . implode(', ', $bits) . ')' : '';
+            $lines[] = '[' . (string) $row['insight_type'] . '] ' . (string) $row['title'] . $summary;
+        }
+
+        return $lines;
     }
 }
