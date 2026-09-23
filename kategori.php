@@ -63,11 +63,18 @@ $articles = $listStmt->fetchAll();
 
 $allCategories = [];
 try {
+    // Only list categories that actually have at least 1 published article —
+    // showing empty "(0)" categories here just clutters the filter row with
+    // pills nobody can click into anything (see SITEMAP.md Update Log,
+    // 23 Sep 2026, after the "Crypto Intelligence" taxonomy migration `018`
+    // added 8 new categories that mostly have 0 articles so far).
     $allCategories = $pdo->query(
         "SELECT c.*, COUNT(p.page_id) AS article_count
          FROM article_categories c
          LEFT JOIN pages p ON p.category_id = c.id AND p.status = 'published'
-         GROUP BY c.id ORDER BY c.name ASC"
+         GROUP BY c.id
+         HAVING article_count > 0
+         ORDER BY c.name ASC"
     )->fetchAll();
 } catch (Throwable $e) {
     $allCategories = [];
