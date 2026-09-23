@@ -73,6 +73,7 @@ require __DIR__ . '/includes/site-header.php';
         <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.php">Beranda</a> <span>/</span> Pencarian</nav>
         <span class="section-kicker">Cari</span>
         <h1>Cari Artikel</h1>
+        <p>Cari Berita &amp; News</p>
         <form class="search-form" method="get" action="<?= wpm_esc(wpm_url_pencarian()) ?>" autocomplete="off">
             <div class="search-form__field">
                 <input type="search" name="q" id="wpm-search-input" value="<?= wpm_esc($query) ?>" placeholder="Cari berita crypto, market, atau topik lainnya..." minlength="2" required>
