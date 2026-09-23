@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/upload.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once __DIR__ . '/../includes/schema-guard.php';
+require_once __DIR__ . '/../includes/turnstile.php';
 
 // Same tier as pages/site-settings.php — admin-tier.
 cms_require_role(['superadmin', 'admin']);
@@ -17,6 +19,8 @@ $projectRoot = CMS_PROJECT_ROOT;
 $redirect = '../pages/site-settings.php';
 
 $existingSettings = null;
+
+cms_turnstile_ensure_schema($pdo);
 
 try {
     $settingsRow = $pdo->query(
@@ -46,6 +50,8 @@ $payload = [
     'meta_description' => trim((string) ($_POST['meta_description'] ?? '')),
     'meta_keywords' => trim((string) ($_POST['meta_keywords'] ?? '')),
     'google_analytics_id' => trim((string) ($_POST['google_analytics_id'] ?? '')),
+    'turnstile_site_key' => trim((string) ($_POST['turnstile_site_key'] ?? '')),
+    'turnstile_secret_key' => trim((string) ($_POST['turnstile_secret_key'] ?? '')),
 ];
 
 $specs = [
@@ -131,6 +137,8 @@ try {
                  meta_description = :meta_description,
                  meta_keywords = :meta_keywords,
                  google_analytics_id = :google_analytics_id,
+                 turnstile_site_key = :turnstile_site_key,
+                 turnstile_secret_key = :turnstile_secret_key,
                  updated_at = NOW()
              WHERE id = :id'
         );
@@ -140,10 +148,12 @@ try {
             'INSERT INTO site_settings (
                 site_name, site_tagline, logo_path, favicon_path, og_image, whatsapp_number, instagram_url,
                 email, address, meta_title, meta_description, meta_keywords, google_analytics_id,
+                turnstile_site_key, turnstile_secret_key,
                 created_at, updated_at
             ) VALUES (
                 :site_name, :site_tagline, :logo_path, :favicon_path, :og_image, :whatsapp_number, :instagram_url,
                 :email, :address, :meta_title, :meta_description, :meta_keywords, :google_analytics_id,
+                :turnstile_site_key, :turnstile_secret_key,
                 NOW(), NOW()
             )'
         );

@@ -25,6 +25,23 @@ if (trim((string) ($_POST['website'] ?? '')) !== '') {
     exit;
 }
 
+// Cloudflare Turnstile (second layer, added 23 Sep 2026 after the
+// honeypot alone stopped being enough — see SITEMAP.md Update Log).
+// No-ops entirely (skips straight through) until an admin configures
+// both keys in Site Settings — see cms-admin/includes/turnstile.php.
+require_once __DIR__ . '/cms-admin/config/database.php';
+require_once __DIR__ . '/cms-admin/includes/turnstile.php';
+
+$turnstileSettings = cms_turnstile_settings($pdo);
+if ($turnstileSettings['enabled']) {
+    $turnstileToken = (string) ($_POST['cf-turnstile-response'] ?? '');
+    $remoteIp = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    if (!cms_turnstile_verify($turnstileToken, $turnstileSettings['secret_key'], $remoteIp)) {
+        header('Location: index.php?contact=error#kontak', true, 302);
+        exit;
+    }
+}
+
 $fullName = trim((string) ($_POST['full_name'] ?? ''));
 $email    = trim((string) ($_POST['email'] ?? ''));
 $subject  = trim((string) ($_POST['subject'] ?? ''));
@@ -40,8 +57,6 @@ if (!$isValid) {
 }
 
 try {
-    require_once __DIR__ . '/cms-admin/config/database.php';
-
     $stmt = $pdo->prepare(
         'INSERT INTO contact_messages (full_name, email, phone, subject, message, is_read, created_at)
          VALUES (:full_name, :email, :phone, :subject, :message, 0, NOW())'

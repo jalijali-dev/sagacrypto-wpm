@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/schema-guard.php';
+require_once dirname(__DIR__) . '/includes/turnstile.php';
 
 // Site-wide configuration is admin-tier — see cms_require_role() in
 // functions.php for the full tier breakdown.
@@ -21,6 +23,7 @@ if (isset($_SESSION['cms_flash']) && is_array($_SESSION['cms_flash'])) {
     unset($_SESSION['cms_flash']);
 }
 
+cms_turnstile_ensure_schema($pdo);
 $stmt = $pdo->query('SELECT * FROM site_settings LIMIT 1');
 $settings = $stmt->fetch() ?: [];
 
@@ -177,6 +180,28 @@ require dirname(__DIR__) . '/includes/alerts.php';
                         <input type="text" name="google_analytics_id" value="<?= cms_esc($val('google_analytics_id')) ?>">
                     </label>
                     <button type="button" class="admin-btn admin-btn--secondary" disabled>Preview metadata</button>
+                </div>
+            </div>
+            <div class="panel" style="grid-column: 1 / -1;">
+                <div class="panel__head">
+                    <h3 class="panel__title">Anti-spam (Cloudflare Turnstile)</h3>
+                </div>
+                <div class="form-stack">
+                    <p class="cms-hint">
+                        Melindungi form "Kontak" di homepage dari bot spam. Gratis dan invisible
+                        untuk pengunjung asli — bikin dulu Widget-nya di
+                        <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener">dash.cloudflare.com &rsaquo; Turnstile</a>,
+                        pilih mode "Managed", lalu tempel Site Key &amp; Secret Key di bawah.
+                        Kosongkan salah satu field untuk mematikan proteksi ini (form tetap
+                        jalan dengan honeypot saja seperti sebelumnya).
+                    </p>
+                    <label class="field">Turnstile Site Key
+                        <input type="text" name="turnstile_site_key" value="<?= cms_esc($val('turnstile_site_key')) ?>" placeholder="0x4AAAAAAA...">
+                    </label>
+                    <label class="field">Turnstile Secret Key
+                        <input type="text" name="turnstile_secret_key" value="<?= cms_esc($val('turnstile_secret_key')) ?>" placeholder="0x4AAAAAAA...">
+                    </label>
+                    <button type="submit" class="admin-btn admin-btn--primary">Save changes</button>
                 </div>
             </div>
         </div>

@@ -131,10 +131,19 @@ try {
 
 $wpmContactStatus = (string) ($_GET['contact'] ?? '');
 
+/* ── Cloudflare Turnstile widget for the Kontak form below — no-ops
+   (renders nothing) until an admin configures both keys in Site
+   Settings, see cms-admin/includes/turnstile.php. ── */
+$turnstileSettings = cms_turnstile_settings($pdo);
+
 $pageTitle = 'SagaCrypto — Crypto Intelligence & Digital Asset Media';
 $pageDescription = 'SagaCrypto menggabungkan berita, data, dan analisis crypto: Bitcoin & Ethereum, altcoin, DeFi & Web3, regulasi, exchange, hingga data on-chain dalam satu platform.';
 $activeNav = 'beranda';
 $canonicalUrl = wpm_site_url('index.php');
+
+if ($turnstileSettings['enabled']) {
+    $extraHead = '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>';
+}
 
 require __DIR__ . '/includes/site-header.php';
 ?>
@@ -451,6 +460,9 @@ require __DIR__ . '/includes/site-header.php';
                             <label for="wpm-website">Website</label>
                             <input type="text" id="wpm-website" name="website" tabindex="-1" autocomplete="off">
                         </div>
+                        <?php if ($turnstileSettings['enabled']) : ?>
+                            <div class="cf-turnstile" data-sitekey="<?= wpm_esc($turnstileSettings['site_key']) ?>" style="margin-bottom:16px;"></div>
+                        <?php endif; ?>
                         <button type="submit" class="crypto-btn crypto-btn--primary" style="width:100%;">Kirim Pesan</button>
                     </form>
                 </div>
