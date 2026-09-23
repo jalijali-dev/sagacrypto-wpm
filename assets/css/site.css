@@ -912,7 +912,7 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   color: var(--text-muted);
   transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
-.crypto-nav__search-btn svg { width: 17px; height: 17px; }
+.crypto-nav__search-btn svg { width: 17px; height: 17px; display: block; }
 .crypto-nav__search-btn:hover { color: var(--cyan); border-color: var(--border-glow); background: rgba(139, 92, 246, 0.10); }
 
 /* ============================================================
