@@ -1,17 +1,24 @@
 /* WPM Crypto Portal — front-end interactions (lightweight, no dependencies) */
 (function () {
   var toggle = document.getElementById("crypto-nav-toggle");
+  var bottomToggle = document.getElementById("wpm-bottom-nav-toggle");
   var mobile = document.getElementById("crypto-nav-mobile");
   var closeBtn = document.getElementById("crypto-nav-mobile-close");
 
   function openMobile() {
     if (mobile) { mobile.classList.add("is-open"); }
+    if (bottomToggle) { bottomToggle.classList.add("is-active"); }
   }
   function closeMobile() {
     if (mobile) { mobile.classList.remove("is-open"); }
+    if (bottomToggle) { bottomToggle.classList.remove("is-active"); }
+  }
+  function toggleMobile() {
+    if (mobile && mobile.classList.contains("is-open")) { closeMobile(); } else { openMobile(); }
   }
 
   if (toggle) { toggle.addEventListener("click", openMobile); }
+  if (bottomToggle) { bottomToggle.addEventListener("click", toggleMobile); }
   if (closeBtn) { closeBtn.addEventListener("click", closeMobile); }
   if (mobile) {
     mobile.addEventListener("click", function (e) {

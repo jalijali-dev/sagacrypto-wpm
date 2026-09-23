@@ -72,7 +72,7 @@ $wpmMobileNavIcons = [
 
 <nav class="wpm-bottom-nav" id="wpm-bottom-nav">
     <?php
-    $wpmBottomNavIds = ['beranda', 'berita', 'crypto', 'kontak'];
+    $wpmBottomNavIds = ['beranda', 'berita', 'crypto'];
     foreach ($wpmMenu as $item) :
         if (!in_array($item['id'], $wpmBottomNavIds, true)) {
             continue;
@@ -83,6 +83,10 @@ $wpmMobileNavIcons = [
             <span class="wpm-bottom-nav__label"><?= wpm_esc($item['label']) ?></span>
         </a>
     <?php endforeach; ?>
+    <button type="button" id="wpm-bottom-nav-toggle" aria-label="Buka menu">
+        <span class="wpm-bottom-nav__icon"><?= wpm_icon('menu') ?></span>
+        <span class="wpm-bottom-nav__label">Menu</span>
+    </button>
 </nav>
 
 <div class="crypto-nav__mobile" id="crypto-nav-mobile">
