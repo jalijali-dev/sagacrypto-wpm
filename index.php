@@ -45,6 +45,17 @@ $trendingStmt = $pdo->prepare(
 $trendingStmt->execute(['heroId' => $heroId]);
 $trendingArticles = $trendingStmt->fetchAll();
 
+/* ── Crypto Research spotlight (repositioning: pilar RESEARCH) ── */
+$researchStmt = $pdo->prepare(
+    "SELECT p.*, c.name AS category_name
+     FROM pages p
+     JOIN article_categories c ON c.id = p.category_id
+     WHERE p.status = 'published' AND c.slug = 'crypto-research' AND p.page_id != :heroId
+     ORDER BY p.published_at DESC LIMIT 3"
+);
+$researchStmt->execute(['heroId' => $heroId]);
+$researchArticles = $researchStmt->fetchAll();
+
 /* ── Crypto widget (mini) ── */
 $cryptoResult = cms_crypto_fetch_coins($pdo);
 $cryptoMini = $cryptoResult['ok'] ? array_slice($cryptoResult['data'], 0, 6) : [];
@@ -71,12 +82,12 @@ $homeBanners = wpm_banners_active($pdo, 'home');
  * isn't reachable — keep these defaults in sync with
  * about-settings.php's ABOUT_DEFAULTS.
  */
-$aboutTitle = 'SagaCrypto, Portal Informasi Crypto Terpercaya';
-$aboutBody = 'SagaCrypto menghadirkan berita crypto, edukasi blockchain, analisis market, dan tren Web3 dalam satu tempat — disajikan ringkas, akurat, dan mudah dipahami untuk pembaca dari berbagai level.';
+$aboutTitle = 'SagaCrypto, Crypto Intelligence & Digital Asset Media';
+$aboutBody = 'SagaCrypto menggabungkan berita, data, dan analisis crypto dalam satu platform — dari Bitcoin & Ethereum, altcoin, DeFi & Web3, hingga regulasi dan data on-chain, disajikan ringkas dan mudah dipahami untuk pembaca dari berbagai level.';
 $aboutFeatures = [
     ['icon' => 'megaphone', 'title' => 'Berita Crypto', 'desc' => 'Update berita crypto tercepat dan terpercaya, dari pergerakan market hingga isu regulasi.'],
-    ['icon' => 'book', 'title' => 'Edukasi Blockchain', 'desc' => 'Materi edukasi blockchain yang mudah dipahami, dari level pemula hingga lanjutan.'],
-    ['icon' => 'chart', 'title' => 'Analisis Market', 'desc' => 'Analisis pergerakan market dan tren token berbasis data, disajikan secara ringkas.'],
+    ['icon' => 'chart', 'title' => 'Data & Market', 'desc' => 'Harga live, market overview, dan data on-chain — dari sekadar berita menuju platform berbasis data.'],
+    ['icon' => 'book', 'title' => 'Crypto Research', 'desc' => 'Analisis mendalam dan riset seputar market, proyek, dan tren crypto berbasis data.'],
     ['icon' => 'flame', 'title' => 'Live Market Ticker', 'desc' => 'Harga BTC, ETH, BNB, dan koin pilihan lainnya, update real-time langsung di halaman utama.'],
 ];
 try {
@@ -112,8 +123,8 @@ try {
 
 $wpmContactStatus = (string) ($_GET['contact'] ?? '');
 
-$pageTitle = 'SagaCrypto — Portal Crypto & Berita Terkini';
-$pageDescription = 'SagaCrypto adalah portal berita crypto: market update, analisis token, edukasi blockchain, dan tren Web3 terkini.';
+$pageTitle = 'SagaCrypto — Crypto Intelligence & Digital Asset Media';
+$pageDescription = 'SagaCrypto menggabungkan berita, data, dan analisis crypto: Bitcoin & Ethereum, altcoin, DeFi & Web3, regulasi, exchange, hingga data on-chain dalam satu platform.';
 $activeNav = 'beranda';
 $canonicalUrl = wpm_site_url('index.php');
 
@@ -136,8 +147,8 @@ require __DIR__ . '/includes/site-header.php';
                         <a class="crypto-btn crypto-btn--ghost" href="<?= wpm_esc(wpm_url_kategori()) ?>">Lihat Semua Berita</a>
                     </div>
                 <?php else : ?>
-                    <h1>Portal <span>Crypto</span> &amp; Market News Terkini</h1>
-                    <p class="lead">Berita crypto, update market, analisis token, edukasi blockchain, dan tren Web3 — dirangkum ringkas dan mudah dipahami setiap hari.</p>
+                    <h1>Crypto <span>Intelligence</span> &amp; Digital Asset Media</h1>
+                    <p class="lead">Berita, data, dan analisis crypto dalam satu tempat — Bitcoin & Ethereum, altcoin, DeFi, regulasi, hingga data on-chain, dirangkum ringkas dan mudah dipahami setiap hari.</p>
                     <div class="crypto-hero__actions">
                         <a class="crypto-btn crypto-btn--primary" href="<?= wpm_esc(wpm_url_kategori()) ?>">Baca Berita Terbaru</a>
                         <a class="crypto-btn crypto-btn--ghost" href="<?= wpm_esc(wpm_url_crypto()) ?>">Lihat Harga Crypto</a>
@@ -239,6 +250,27 @@ require __DIR__ . '/includes/site-header.php';
             </div>
         </div>
     </section>
+
+    <!-- ══════════ CRYPTO RESEARCH (repositioning: pilar RESEARCH) ══════════ -->
+    <?php if ($researchArticles !== []) : ?>
+    <section class="crypto-section--tight">
+        <div class="crypto-container">
+            <div class="section-header">
+                <span class="section-kicker">Research</span>
+                <h2 class="section-title">Crypto <span>Research</span></h2>
+                <p class="section-subtitle">Analisis mendalam dan riset seputar market, proyek, dan tren crypto.</p>
+            </div>
+            <div class="crypto-grid crypto-grid--3">
+                <?php foreach ($researchArticles as $article) : ?>
+                    <?= wpm_article_card($article) ?>
+                <?php endforeach; ?>
+            </div>
+            <div style="text-align:center;margin-top:28px;">
+                <a class="crypto-btn crypto-btn--ghost" href="<?= wpm_esc(wpm_url_kategori('crypto-research')) ?>">Lihat Semua Riset <?= wpm_icon('arrow-right') ?></a>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
 
     <!-- ══════════ TRENDING ══════════ -->
     <?php if ($trendingArticles !== []) : ?>
