@@ -115,11 +115,17 @@ $canonicalUrl = wpm_site_url(
 if (($_GET['ajax'] ?? '') === '1') {
     ob_start();
     if ($articles !== []) {
+        // Only split into a second grid container when there's an actual ad
+        // to show between them — splitting unconditionally at a fixed index
+        // breaks the 3-column grid's row alignment and leaves a dangling
+        // empty cell whenever this position has no ad configured (which is
+        // the normal case). See SITEMAP.md Update Log, 23 Sep 2026.
+        $wpmBetweenAd = wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null);
         echo '<div class="crypto-grid crypto-grid--3">';
         foreach ($articles as $i => $article) {
             echo wpm_article_card($article);
-            if ($i === 4) {
-                echo '</div>' . wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null) . '<div class="crypto-grid crypto-grid--3">';
+            if ($i === 4 && $wpmBetweenAd !== '') {
+                echo '</div>' . $wpmBetweenAd . '<div class="crypto-grid crypto-grid--3">';
             }
         }
         echo '</div>';
@@ -165,13 +171,16 @@ require __DIR__ . '/includes/site-header.php';
     <div class="crypto-container">
         <?= wpm_render_ad_slot($pdo, 'above-article', 'category', $category['id'] ?? null) ?>
 
+        <?php
+        $wpmBetweenAd = $articles !== [] ? wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null) : '';
+        ?>
         <?php if ($articles !== []) : ?>
             <div id="wpm-berita-list">
             <div class="crypto-grid crypto-grid--3">
                 <?php foreach ($articles as $i => $article) : ?>
                     <?= wpm_article_card($article) ?>
-                    <?php if ($i === 4) : ?>
-                        </div><?= wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null) ?><div class="crypto-grid crypto-grid--3">
+                    <?php if ($i === 4 && $wpmBetweenAd !== '') : ?>
+                        </div><?= $wpmBetweenAd ?><div class="crypto-grid crypto-grid--3">
                     <?php endif; ?>
                 <?php endforeach; ?>
             </div>
