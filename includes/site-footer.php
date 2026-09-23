@@ -57,11 +57,27 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     </div>
 </footer>
 
+<?php
+// Icon per nav item — makes the mobile drawer scannable at a glance
+// instead of a plain stack of text links (see SITEMAP.md Update Log,
+// 23 Sep 2026). 'chart' (bar-chart glyph) reads as a trading/market icon,
+// matching the Crypto section's own data-heavy nature.
+$wpmMobileNavIcons = [
+    'beranda' => 'home',
+    'berita'  => 'news',
+    'crypto'  => 'chart',
+    'tentang' => 'info',
+    'kontak'  => 'mail',
+];
+?>
 <div class="crypto-nav__mobile" id="crypto-nav-mobile">
     <div class="crypto-nav__mobile-panel">
         <button type="button" class="crypto-nav__mobile-close" id="crypto-nav-mobile-close" aria-label="Tutup menu">&times;</button>
         <?php foreach ($wpmMenu as $item) : ?>
-            <a href="<?= wpm_esc($item['href']) ?>" class="<?= ($activeNav ?? '') === $item['id'] ? 'is-active' : '' ?>"><?= wpm_esc($item['label']) ?></a>
+            <a href="<?= wpm_esc($item['href']) ?>" class="<?= ($activeNav ?? '') === $item['id'] ? 'is-active' : '' ?>">
+                <span class="crypto-nav__mobile-icon"><?= wpm_icon($wpmMobileNavIcons[$item['id']] ?? 'tag') ?></span>
+                <span><?= wpm_esc($item['label']) ?></span>
+            </a>
         <?php endforeach; ?>
     </div>
 </div>

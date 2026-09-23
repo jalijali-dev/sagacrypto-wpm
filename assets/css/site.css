@@ -1345,6 +1345,10 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .pagination .is-current { background: var(--grad-brand); color: #fff; border-color: transparent; }
 .pagination .is-disabled { opacity: 0.35; pointer-events: none; }
 
+.wpm-load-more-wrap { display: flex; justify-content: center; margin-top: 40px; }
+.wpm-load-more-wrap .crypto-btn { min-width: 200px; }
+.wpm-load-more-wrap .crypto-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ============================================================
    ARTICLE DETAIL PAGE
    ============================================================ */
@@ -1603,15 +1607,54 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 }
 
 .crypto-nav__mobile-panel a {
-  padding: 14px 12px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 14px;
+  border-radius: 14px;
   font-size: 15.5px;
   font-weight: 500;
   color: var(--text-muted);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+/* Icon chip — bright gradient badge so each item is scannable at a glance
+   instead of reading as a flat list of text (see SITEMAP.md Update Log,
+   23 Sep 2026). Muted/outlined by default, lights up to the full brand
+   gradient on hover/active so the shading actually pops on the dark panel. */
+.crypto-nav__mobile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: var(--cyan);
+  box-shadow: 0 0 0 rgba(139, 92, 246, 0);
+  transition: background 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.crypto-nav__mobile-icon svg {
+  width: 19px;
+  height: 19px;
 }
 
 .crypto-nav__mobile-panel a:hover,
 .crypto-nav__mobile-panel a.is-active {
   background: rgba(139, 92, 246, 0.14);
+  border-color: rgba(139, 92, 246, 0.28);
   color: #fff;
+  transform: translateX(2px);
+}
+
+.crypto-nav__mobile-panel a:hover .crypto-nav__mobile-icon,
+.crypto-nav__mobile-panel a.is-active .crypto-nav__mobile-icon {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.55), 0 0 0 4px rgba(34, 211, 238, 0.12);
 }

@@ -108,6 +108,33 @@ $canonicalUrl = wpm_site_url(
     $tagSlug !== '' ? wpm_url_tag($tagSlug) : wpm_url_kategori($categorySlug !== '' ? $categorySlug : null)
 );
 
+/* ── "Muat Lebih Banyak" (load more) AJAX fragment — replaces numbered
+   pagination for this listing (see SITEMAP.md Update Log, 23 Sep 2026).
+   Returns just the next page's cards as JSON so JS can append them
+   in place instead of a full page reload. No site-header/footer here. ── */
+if (($_GET['ajax'] ?? '') === '1') {
+    ob_start();
+    if ($articles !== []) {
+        echo '<div class="crypto-grid crypto-grid--3">';
+        foreach ($articles as $i => $article) {
+            echo wpm_article_card($article);
+            if ($i === 4) {
+                echo '</div>' . wpm_render_ad_slot($pdo, 'between-article-cards', 'category', $category['id'] ?? null) . '<div class="crypto-grid crypto-grid--3">';
+            }
+        }
+        echo '</div>';
+    }
+    $wpmLoadMoreFragment = ob_get_clean();
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'html'     => $wpmLoadMoreFragment,
+        'hasMore'  => $page < $totalPages,
+        'nextPage' => $page + 1,
+    ]);
+    exit;
+}
+
 require __DIR__ . '/includes/site-header.php';
 ?>
 
@@ -139,6 +166,7 @@ require __DIR__ . '/includes/site-header.php';
         <?= wpm_render_ad_slot($pdo, 'above-article', 'category', $category['id'] ?? null) ?>
 
         <?php if ($articles !== []) : ?>
+            <div id="wpm-berita-list">
             <div class="crypto-grid crypto-grid--3">
                 <?php foreach ($articles as $i => $article) : ?>
                     <?= wpm_article_card($article) ?>
@@ -147,15 +175,18 @@ require __DIR__ . '/includes/site-header.php';
                     <?php endif; ?>
                 <?php endforeach; ?>
             </div>
+            </div>
 
-            <?php if ($totalPages > 1) : ?>
-            <nav class="pagination" aria-label="Pagination">
-                <a class="<?= $page <= 1 ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(max(1, $page - 1))) ?>">&larr;</a>
-                <?php for ($p = 1; $p <= $totalPages; $p++) : ?>
-                    <a class="<?= $p === $page ? 'is-current' : '' ?>" href="<?= wpm_esc($paginateUrl($p)) ?>"><?= $p ?></a>
-                <?php endfor; ?>
-                <a class="<?= $page >= $totalPages ? 'is-disabled' : '' ?>" href="<?= wpm_esc($paginateUrl(min($totalPages, $page + 1))) ?>">&rarr;</a>
-            </nav>
+            <?php if ($page < $totalPages) : ?>
+            <div class="wpm-load-more-wrap">
+                <button
+                    type="button"
+                    id="wpm-load-more-btn"
+                    class="crypto-btn crypto-btn--ghost"
+                    data-base-url="<?= wpm_esc($paginateUrl(1)) ?>"
+                    data-next-page="<?= (int) ($page + 1) ?>"
+                >Muat Lebih Banyak</button>
+            </div>
             <?php endif; ?>
         <?php else : ?>
             <div class="empty-state"><?= wpm_icon('news') ?><p>Belum ada artikel untuk ditampilkan.</p></div>
@@ -164,4 +195,42 @@ require __DIR__ . '/includes/site-header.php';
 </section>
 
 </main>
+<script>
+(function () {
+  var btn = document.getElementById('wpm-load-more-btn');
+  var list = document.getElementById('wpm-berita-list');
+  if (!btn || !list) return;
+
+  var originalLabel = btn.textContent;
+
+  btn.addEventListener('click', function () {
+    var nextPage = parseInt(btn.dataset.nextPage, 10) || 1;
+    var baseUrl = btn.dataset.baseUrl || '';
+    var url = baseUrl.replace(/([?&])page=\d+/, '$1page=' + nextPage);
+    url += (url.indexOf('?') === -1 ? '?' : '&') + 'ajax=1';
+
+    btn.disabled = true;
+    btn.textContent = 'Memuat...';
+
+    fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data && data.html) {
+          list.insertAdjacentHTML('beforeend', data.html);
+        }
+        if (data && data.hasMore) {
+          btn.dataset.nextPage = data.nextPage;
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        } else {
+          btn.remove();
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      });
+  });
+})();
+</script>
 <?php require __DIR__ . '/includes/site-footer.php'; ?>

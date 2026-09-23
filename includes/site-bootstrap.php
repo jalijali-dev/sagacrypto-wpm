@@ -55,6 +55,8 @@ function wpm_icon(string $name): string
         'flame' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2c1.5 3 0 4.5-1 6-1.4 2-2 3.5-2 5.5A5 5 0 0 0 14 18a4 4 0 0 0 2-7.5c1.7 1 2 3 2 4.5A7 7 0 0 1 7 15.5C6.5 11 9 9 9 6.5 9 5 10.5 3 12 2Z'/></svg>",
         'apple' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M17.4 12.4c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.7 2.2-1.6 2.7-.4 6.7 1.1 8.9.8 1.1 1.6 2.3 2.8 2.2 1.1 0 1.6-.7 2.9-.7s1.7.7 2.9.7c1.2 0 2-1.1 2.7-2.2.9-1.2 1.2-2.4 1.2-2.5-.1 0-2.3-.9-2.3-3.6Z'/><path d='M14.9 5.9c.6-.7 1-1.8.9-2.8-.9.1-2 .6-2.6 1.3-.6.7-1.1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2Z'/></svg>",
         'google-play' => "<svg viewBox='0 0 24 24' fill='currentColor'><path d='M6 4.5v15c0 .8.9 1.3 1.6.9l12-7.5c.6-.4.6-1.4 0-1.8l-12-7.5C6.9 3.2 6 3.7 6 4.5Z'/></svg>",
+        'home' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M3 11.5 12 4l9 7.5'/><path d='M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V19a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9'/></svg>",
+        'info' => "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><line x1='12' y1='11' x2='12' y2='16.5'/><circle cx='12' cy='7.7' r='1.1' fill='currentColor' stroke='none'/></svg>",
     ];
 
     return $icons[$name] ?? '';
