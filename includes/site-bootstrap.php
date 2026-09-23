@@ -22,6 +22,7 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../cms-admin/config/database.php';
 require_once __DIR__ . '/../cms-admin/includes/schema-guard.php';
 require_once __DIR__ . '/../cms-admin/includes/crypto-api.php';
+require_once __DIR__ . '/../cms-admin/includes/market-sentiment.php';
 
 function wpm_esc(?string $value): string
 {

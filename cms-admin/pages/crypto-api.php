@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/schema-guard.php';
 require_once dirname(__DIR__) . '/includes/crypto-api.php';
+require_once dirname(__DIR__) . '/includes/market-sentiment.php';
 
 // Holds raw Crypto API keys — superadmin-only. See cms_require_role() in
 // functions.php for the full tier breakdown.
@@ -13,6 +14,7 @@ cms_require_role(['superadmin']);
 $ca_schemaError = null;
 try {
     cms_crypto_ensure_schema($pdo);
+    cms_market_sentiment_ensure_schema($pdo);
 } catch (Throwable $e) {
     $ca_schemaError = $e->getMessage();
 }
@@ -51,6 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
         array_map('trim', explode(',', $liveTickerSymbols)),
         static fn (string $s): bool => $s !== '' && preg_match('/^[A-Z0-9]{2,20}$/', $s) === 1
     ))));
+    $marketSentimentEnabled = !empty($_POST['market_sentiment_enabled']) ? 1 : 0;
 
     if ($provider === '' || $baseUrl === '' || $endpoint === '') {
         $ca_redirect('Provider, base URL, and endpoint are required.', 'error');
@@ -68,6 +71,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
         'is_active'         => $isActive,
         'live_ticker_enabled' => $liveTickerEnabled,
         'live_ticker_symbols' => $liveTickerSymbols !== '' ? $liveTickerSymbols : 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT',
+        'market_sentiment_enabled' => $marketSentimentEnabled,
     ];
 
     $sql = 'UPDATE crypto_api_settings
@@ -75,7 +79,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
                 api_key_header = :api_key_header, default_currency = :default_currency,
                 coins_limit = :coins_limit, refresh_interval = :refresh_interval,
                 cache_duration = :cache_duration, is_active = :is_active,
-                live_ticker_enabled = :live_ticker_enabled, live_ticker_symbols = :live_ticker_symbols';
+                live_ticker_enabled = :live_ticker_enabled, live_ticker_symbols = :live_ticker_symbols,
+                market_sentiment_enabled = :market_sentiment_enabled';
 
     // Only overwrite the stored API key if the admin actually typed a new
     // one — the field is left blank on reload so the key is never echoed
@@ -190,6 +195,20 @@ require dirname(__DIR__) . '/includes/alerts.php';
                 <label class="field" style="margin-top: 14px;">Simbol aset
                     <input type="text" name="live_ticker_symbols" value="<?= cms_esc((string) ($settings['live_ticker_symbols'] ?? 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT')) ?>" placeholder="BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT">
                     <small class="field__hint">Pisahkan setiap simbol dengan koma. Gunakan format pasangan USDT.</small>
+                </label>
+            </div>
+
+            <div class="settings-card" style="grid-column: 1 / -1;">
+                <h4 class="settings-card__title">Market Sentiment</h4>
+                <p class="settings-card__desc">
+                    Tampilkan BTC Dominance dan Fear and Greed Index di homepage dan halaman Market. Data dari sumber publik gratis (CoinGecko, Alternative.me), diperbarui berkala melalui cache server.
+                </p>
+
+                <label class="field field--checkbox" style="margin-top: 14px;">
+                    <input type="checkbox" name="market_sentiment_enabled" value="1"<?= (int) ($settings['market_sentiment_enabled'] ?? 0) === 1 ? ' checked' : '' ?>>
+                    <span class="field--checkbox__text">
+                        <span class="field--checkbox__title">Aktifkan BTC Dominance &amp; Fear and Greed Index di frontend</span>
+                    </span>
                 </label>
             </div>
 

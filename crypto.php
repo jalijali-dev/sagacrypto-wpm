@@ -14,6 +14,12 @@ $forceRefresh = isset($_GET['refresh']);
 $result = cms_crypto_fetch_coins($pdo, $forceRefresh);
 $settings = cms_crypto_get_settings($pdo);
 
+/* ── Market Sentiment (BTC Dominance + Fear and Greed Index) — Fase A of
+   the "Crypto Intelligence" repositioning, see docs/MARKET_SENTIMENT_PLAN.md. ── */
+$btcDominance = cms_fetch_btc_dominance($pdo, $forceRefresh);
+$fearGreed = cms_fetch_fear_greed($pdo, $forceRefresh);
+$sentimentVisible = $btcDominance['ok'] || $fearGreed['ok'];
+
 $statusType = 'off';
 $statusText = 'Crypto API belum aktif.';
 if ($result['source'] === 'live') {
@@ -47,6 +53,23 @@ require __DIR__ . '/includes/site-header.php';
 <section class="crypto-section--tight" <?php if ($result['ok'] && (int) ($settings['refresh_interval'] ?? 0) > 0) : ?>data-auto-refresh="<?= (int) $settings['refresh_interval'] ?>"<?php endif; ?>>
     <div class="crypto-container">
         <div class="status-banner status-banner--<?= $statusType ?>"><?= wpm_icon('chart') ?> <?= wpm_esc($statusText) ?></div>
+
+        <?php if ($sentimentVisible) : ?>
+            <div class="crypto-grid crypto-grid--2" style="margin-bottom:32px;">
+                <?php if ($btcDominance['ok']) : ?>
+                    <div class="market-card glass-card" style="padding:28px 24px;">
+                        <span class="market-card__label">BTC Dominance</span>
+                        <div class="market-card__value" style="font-size:34px;"><?= wpm_esc(number_format((float) $btcDominance['btc'], 1)) ?>%</div>
+                    </div>
+                <?php endif; ?>
+                <?php if ($fearGreed['ok']) : ?>
+                    <div class="market-card glass-card" style="padding:28px 24px;">
+                        <span class="market-card__label">Fear &amp; Greed Index</span>
+                        <div class="market-card__value" style="font-size:34px;"><?= (int) $fearGreed['value'] ?> <span style="font-size:18px;font-weight:600;color:var(--text-muted);">— <?= wpm_esc((string) $fearGreed['classification']) ?></span></div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
         <?php if ($result['data'] !== []) :
             $chartCoins = array_slice($result['data'], 0, 10);

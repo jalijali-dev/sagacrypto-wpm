@@ -60,6 +60,14 @@ $researchArticles = $researchStmt->fetchAll();
 $cryptoResult = cms_crypto_fetch_coins($pdo);
 $cryptoMini = $cryptoResult['ok'] ? array_slice($cryptoResult['data'], 0, 6) : [];
 
+/* ── Market Sentiment (BTC Dominance + Fear and Greed Index) — Fase A of
+   the "Crypto Intelligence" repositioning, see docs/MARKET_SENTIMENT_PLAN.md.
+   Both fetchers already no-op when disabled in admin, so $sentimentVisible
+   just needs to check both came back ok. ── */
+$btcDominance = cms_fetch_btc_dominance($pdo);
+$fearGreed = cms_fetch_fear_greed($pdo);
+$sentimentVisible = $btcDominance['ok'] || $fearGreed['ok'];
+
 /* ── Dynamic Featured/Pamungkas sections (admin-configurable, may be empty) ── */
 $featuredSections = [];
 try {
@@ -215,6 +223,22 @@ require __DIR__ . '/includes/site-header.php';
                 <h2 class="section-title">Harga <span>Crypto</span> Hari Ini</h2>
                 <p class="section-subtitle"><?= $cryptoResult['ok'] ? 'Data live dari Crypto API.' : 'Crypto API belum aktif — hubungkan lewat dashboard admin untuk menampilkan data live.' ?></p>
             </div>
+            <?php if ($sentimentVisible) : ?>
+                <div class="crypto-grid crypto-grid--2" style="margin-bottom:28px;">
+                    <?php if ($btcDominance['ok']) : ?>
+                        <div class="market-card glass-card">
+                            <span class="market-card__label">BTC Dominance</span>
+                            <div class="market-card__value"><?= wpm_esc(number_format((float) $btcDominance['btc'], 1)) ?>%</div>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($fearGreed['ok']) : ?>
+                        <div class="market-card glass-card">
+                            <span class="market-card__label">Fear &amp; Greed Index</span>
+                            <div class="market-card__value"><?= (int) $fearGreed['value'] ?> — <?= wpm_esc((string) $fearGreed['classification']) ?></div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <?php if ($cryptoMini !== []) : ?>
                 <?= wpm_mini_crypto_table($cryptoMini) ?>
                 <div style="text-align:center;margin-top:28px;">
