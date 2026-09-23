@@ -21,6 +21,19 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     : null;
 ?>
 <?= wpm_render_ad_slot($pdo, 'footer') ?>
+<?php
+// Icon per nav item — makes the mobile drawer scannable at a glance
+// instead of a plain stack of text links (see SITEMAP.md Update Log,
+// 23 Sep 2026). 'chart' (bar-chart glyph) reads as a trading/market icon,
+// matching the Crypto section's own data-heavy nature.
+$wpmMobileNavIcons = [
+    'beranda' => 'home',
+    'berita'  => 'news',
+    'crypto'  => 'chart',
+    'tentang' => 'info',
+    'kontak'  => 'mail',
+];
+?>
 
 <footer class="crypto-footer">
     <div class="crypto-container">
@@ -57,19 +70,21 @@ $stickyAd = (empty($adSettings) || ((int) ($adSettings['ads_enabled'] ?? 1) === 
     </div>
 </footer>
 
-<?php
-// Icon per nav item — makes the mobile drawer scannable at a glance
-// instead of a plain stack of text links (see SITEMAP.md Update Log,
-// 23 Sep 2026). 'chart' (bar-chart glyph) reads as a trading/market icon,
-// matching the Crypto section's own data-heavy nature.
-$wpmMobileNavIcons = [
-    'beranda' => 'home',
-    'berita'  => 'news',
-    'crypto'  => 'chart',
-    'tentang' => 'info',
-    'kontak'  => 'mail',
-];
-?>
+<nav class="wpm-bottom-nav" id="wpm-bottom-nav">
+    <?php
+    $wpmBottomNavIds = ['beranda', 'berita', 'crypto', 'kontak'];
+    foreach ($wpmMenu as $item) :
+        if (!in_array($item['id'], $wpmBottomNavIds, true)) {
+            continue;
+        }
+    ?>
+        <a href="<?= wpm_esc($item['href']) ?>" class="<?= ($activeNav ?? '') === $item['id'] ? 'is-active' : '' ?>">
+            <span class="wpm-bottom-nav__icon"><?= wpm_icon($wpmMobileNavIcons[$item['id']] ?? 'tag') ?></span>
+            <span class="wpm-bottom-nav__label"><?= wpm_esc($item['label']) ?></span>
+        </a>
+    <?php endforeach; ?>
+</nav>
+
 <div class="crypto-nav__mobile" id="crypto-nav-mobile">
     <div class="crypto-nav__mobile-panel">
         <button type="button" class="crypto-nav__mobile-close" id="crypto-nav-mobile-close" aria-label="Tutup menu">&times;</button>

@@ -1281,6 +1281,7 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   cursor: pointer; font-size: 14px;
 }
 @media (max-width: 640px) { .wpm-sticky-ad { display: block; } }
+@media (max-width: 780px) { .wpm-sticky-ad { bottom: 64px; } }
 
 /* ============================================================
    ARTICLE CARD (grid tile used across homepage / category / related)
@@ -1657,4 +1658,71 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   border-color: transparent;
   color: #fff;
   box-shadow: 0 4px 16px rgba(139, 92, 246, 0.55), 0 0 0 4px rgba(34, 211, 238, 0.12);
+}
+
+/* ── Mobile bottom nav bar (sticky app-style tab bar, mobile only) ─────── */
+.wpm-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .wpm-bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    background: rgba(10, 8, 22, 0.92);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(139, 92, 246, 0.22);
+    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  body {
+    padding-bottom: 64px;
+  }
+}
+
+.wpm-bottom-nav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  color: rgba(226, 220, 245, 0.65);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wpm-bottom-nav__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  color: rgba(226, 220, 245, 0.75);
+  transition: all 0.2s ease;
+}
+
+.wpm-bottom-nav__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wpm-bottom-nav a.is-active {
+  color: #fff;
+}
+
+.wpm-bottom-nav a.is-active .wpm-bottom-nav__icon,
+.wpm-bottom-nav a:hover .wpm-bottom-nav__icon {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5), 0 0 0 4px rgba(34, 211, 238, 0.12);
 }
