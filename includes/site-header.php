@@ -60,6 +60,7 @@ $jsVer   = @filemtime($jsPath) ?: 1;
         <link rel="shortcut icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
         <link rel="apple-touch-icon" href="<?= wpm_esc($wpmFaviconUrl) ?>">
     <?php endif; ?>
+    <link rel="manifest" href="/manifest.json">
     <?php if (!empty($canonicalUrl)) : ?>
         <link rel="canonical" href="<?= wpm_esc($canonicalUrl) ?>">
     <?php endif; ?>
