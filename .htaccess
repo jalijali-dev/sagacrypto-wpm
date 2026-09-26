@@ -20,6 +20,21 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # --- Hide the .php extension (26 Sep 2026) ---------------------------
+    # 1) /index.php -> / (the homepage's canonical URL has no filename at
+    #    all; DirectoryIndex already serves index.php for "/").
+    RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\s/+index\.php[\s?] [NC]
+    RewriteRule ^index\.php$ / [R=301,L]
+
+    # 2) Any other *.php the browser hits directly -> the same name with
+    #    no extension, EXCEPT the internal action/API endpoints that forms
+    #    and JS fetch() calls post/GET straight against by filename
+    #    (contact-submit.php, crypto-ticker-data.php,
+    #    generate-sitemap-static.php) — those must keep working as-is.
+    RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\s/+([a-zA-Z0-9_-]+)\.php[\s?] [NC]
+    RewriteCond %1 !^(index|contact-submit|crypto-ticker-data|generate-sitemap-static)$ [NC]
+    RewriteRule ^ /%1 [R=301,L]
+
     # Never rewrite requests that already point at a real file or directory
     # (assets/, cms-admin/, uploads/, the *.php files themselves, etc.).
     RewriteCond %{REQUEST_FILENAME} -f [OR]
@@ -56,4 +71,10 @@
     RewriteRule ^sitemap-articles\.xml$ sitemap.php?type=articles [L,QSA]
     RewriteRule ^sitemap-categories\.xml$ sitemap.php?type=categories [L,QSA]
     RewriteRule ^sitemap-custom\.xml$ sitemap.php?type=custom [L,QSA]
+
+    # 3) Fallback: any other extensionless request maps to the matching
+    #    .php file if one exists (so e.g. /sitemap works too, not just the
+    #    named routes above).
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^([a-zA-Z0-9_-]+)/?$ $1.php [L,QSA]
 </IfModule>
