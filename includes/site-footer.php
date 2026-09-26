@@ -63,6 +63,10 @@ $wpmMobileNavIcons = [
 
         <p class="footer-disclaimer">Data harga crypto pada situs ini bersumber dari API pihak ketiga dan disajikan sebagaimana adanya, bukan merupakan saran keuangan/investasi.</p>
 
+        <div class="footer-legal">
+            <a href="kebijakan-privasi">Kebijakan Privasi</a>
+        </div>
+
         <div class="footer-bottom">
             <span>&copy; <?= wpm_esc($currentYear) ?> SagaCrypto. Seluruh hak cipta dilindungi.</span>
             <span>Portal berita &amp; data crypto dan Web3.</span>

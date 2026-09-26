@@ -875,6 +875,16 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   line-height: 1.6;
 }
 
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0 0 16px;
+  font-size: 12.5px;
+}
+.footer-legal a { color: var(--text-faint); text-decoration: underline; text-underline-offset: 2px; }
+.footer-legal a:hover { color: var(--cyan); }
+
 /* ============================================================
    RESPONSIVE
    ============================================================ */

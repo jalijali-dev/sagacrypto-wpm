@@ -44,6 +44,9 @@
     # /pencarian -> pencarian.php  (search form still submits ?q=... via QSA)
     RewriteRule ^pencarian/?$ pencarian.php [L,QSA]
 
+    # /kebijakan-privasi -> kebijakan-privasi.php
+    RewriteRule ^kebijakan-privasi/?$ kebijakan-privasi.php [L,QSA]
+
     # Sitemaps module (14 Jul 2026) — /sitemap.xml and /sitemap-index.xml
     # both serve the same sitemap index; the four per-type files are the
     # sub-sitemaps it points search engines at. See sitemap.php.
