@@ -1695,53 +1695,53 @@ a.contact-info-row__value:hover { color: var(--cyan); }
   .wpm-bottom-nav {
     display: flex;
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
     z-index: 60;
     background: rgba(10, 8, 22, 0.92);
     backdrop-filter: blur(14px);
-    border: 1px solid var(--cyan);
-    border-bottom: none;
-    box-shadow: 0 -4px 20px rgba(34, 211, 238, 0.25);
-    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+    border: 1px solid rgba(34, 211, 238, 0.45);
+    border-radius: 999px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(34, 211, 238, 0.08);
+    padding: 6px 10px;
     justify-content: space-around;
     align-items: center;
   }
 
   body {
-    padding-bottom: 64px;
+    padding-bottom: 72px;
   }
 }
 
 .wpm-bottom-nav a,
 .wpm-bottom-nav button {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  gap: 6px;
   flex: 1;
-  color: rgba(226, 220, 245, 0.65);
+  color: rgba(226, 220, 245, 0.6);
   text-decoration: none;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   background: none;
   border: none;
-  padding: 0;
+  padding: 7px 10px;
+  border-radius: 999px;
   font-family: inherit;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .wpm-bottom-nav__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-  border: 1px solid rgba(139, 92, 246, 0.22);
-  color: rgba(226, 220, 245, 0.75);
-  transition: all 0.2s ease;
+  width: 18px;
+  height: 18px;
+  color: inherit;
 }
 
 .wpm-bottom-nav__icon svg {
@@ -1752,16 +1752,13 @@ a.contact-info-row__value:hover { color: var(--cyan); }
 .wpm-bottom-nav a.is-active,
 .wpm-bottom-nav button.is-active {
   color: #fff;
+  background: var(--grad-brand);
+  box-shadow: 0 4px 14px rgba(34, 211, 238, 0.35);
 }
 
-.wpm-bottom-nav a.is-active .wpm-bottom-nav__icon,
-.wpm-bottom-nav a:hover .wpm-bottom-nav__icon,
-.wpm-bottom-nav button.is-active .wpm-bottom-nav__icon,
-.wpm-bottom-nav button:hover .wpm-bottom-nav__icon {
-  background: var(--grad-brand);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5), 0 0 0 4px rgba(34, 211, 238, 0.12);
+.wpm-bottom-nav a:hover,
+.wpm-bottom-nav button:hover {
+  color: rgba(226, 220, 245, 0.9);
 }
 
 /* Header hamburger toggle is redundant now that the bottom nav has its own
