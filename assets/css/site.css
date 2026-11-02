@@ -1765,5 +1765,13 @@ a.contact-info-row__value:hover { color: var(--cyan); }
    Menu button — swap it for the search shortcut on mobile instead. */
 @media (max-width: 780px) {
   .crypto-nav__toggle { display: none !important; }
-  .crypto-nav__search-btn { display: inline-flex !important; }
+  .crypto-nav__search-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+  .crypto-nav__inner {
+    padding-top: 20px;
+    padding-bottom: 18px;
+  }
 }
